@@ -18,8 +18,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { decodeImageFile } from "@/lib/decode-raster";
 import {
   canvasToJpeg,
+  drawColumn,
   drawPage,
-  drawTape,
   paintImage,
   type PreviewFrame,
   type TextTurn,
@@ -36,14 +36,10 @@ import { parseJsonText } from "@/lib/json-text";
 import { photoFileName } from "@/lib/photo-name";
 import { preparePlainText } from "@/lib/plain-text";
 import {
-  contentLength,
-  FRAME_HEIGHT,
-  FRAME_WIDTH,
   frameGeometry,
-  groupTapeSegments,
   MAX_PAGES,
-  MAX_PRINT_LENGTH,
   MAX_SCROLL_PAGES,
+  planColumn,
   planPages,
   PRINT_LINE_HEIGHT,
   PRINT_PADDING,
@@ -72,7 +68,7 @@ const SHAPES: { id: FrameShape; label: string; hint: string }[] = [
   {
     id: "strip",
     label: "Свиток",
-    hint: "Фото остаётся вертикальным. Текст на нём лежит на боку: камера повернёт снимок, и строка пойдёт вдоль ленты.",
+    hint: "Колонка вдоль ленты. Буквы на фото повёрнуты на 90°: камера сама поворачивает снимок, и обычный текст у неё выходит строкой.",
   },
 ];
 
@@ -183,7 +179,6 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   const [fontSize, setFontSize] = useState(DEFAULT_FONT);
   const [shape, setShape] = useState<FrameShape>("frame");
   const [textTurn, setTextTurn] = useState<Exclude<TextTurn, 0>>(90);
-  const [stretchLength, setStretchLength] = useState(false);
   const [photoStart, setPhotoStart] = useState(0);
   const [charWidth, setCharWidth] = useState<number | null>(null);
   const [fontState, setFontState] = useState<FontState>("loading");
@@ -218,26 +213,25 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
 
   const plan = useMemo(() => {
     if (!charWidth || !printable) return null;
-    const stretch = alongTape && stretchLength;
+    if (alongTape) {
+      return planColumn(printable, {
+        fontSize,
+        lineHeight: PRINT_LINE_HEIGHT,
+        charWidth,
+        padding: PRINT_PADDING,
+        maxPages: MAX_SCROLL_PAGES,
+      });
+    }
     return planPages(printable, {
-      width: alongTape ? (stretch ? MAX_PRINT_LENGTH : FRAME_HEIGHT) : geometry.width,
-      height: alongTape ? FRAME_WIDTH : geometry.height,
+      width: geometry.width,
+      height: geometry.height,
       fontSize,
       lineHeight: PRINT_LINE_HEIGHT,
       charWidth,
       padding: PRINT_PADDING,
-      maxPages: alongTape ? MAX_SCROLL_PAGES : MAX_PAGES,
-      header: !alongTape,
+      maxPages: MAX_PAGES,
     });
-  }, [
-    alongTape,
-    charWidth,
-    fontSize,
-    geometry.height,
-    geometry.width,
-    printable,
-    stretchLength,
-  ]);
+  }, [alongTape, charWidth, fontSize, geometry.height, geometry.width, printable]);
 
   const pages = useMemo(() => plan?.pages ?? [], [plan]);
   const preparedImages = useMemo(() => {
@@ -274,38 +268,15 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
         data: page.data,
       }));
     }
-    if (alongTape && stretchLength && charWidth) {
-      const fitted = pages.map((page) => ({
-        ...page,
-        width: Math.min(
-          MAX_PRINT_LENGTH,
-          contentLength(page.lines, charWidth, page.padding),
-        ),
-      }));
-      return groupTapeSegments(fitted, MAX_PRINT_LENGTH).flatMap((segments) => {
-        const first = segments[0];
-        if (!first) return [];
-        const length = segments.reduce((sum, segment) => sum + segment.width, 0);
-        return [
-          {
-            kind: "text" as const,
-            width: length,
-            height: first.height,
-            page: first,
-            segments,
-            turn: textTurn,
-          },
-        ];
-      });
-    }
     return pages.map((page) => ({
       kind: "text" as const,
-      width: alongTape ? page.height : page.width,
-      height: alongTape ? page.width : page.height,
+      width: page.width,
+      height: page.height,
       page,
       turn: alongTape ? textTurn : 0,
+      column: alongTape,
     }));
-  }, [alongTape, charWidth, mode, pages, preparedImages, stretchLength, textTurn]);
+  }, [alongTape, mode, pages, preparedImages, textTurn]);
   const activeIndex =
     previewFrames.length === 0 ? 0 : Math.min(active, previewFrames.length - 1);
   const activeFrame = previewFrames[activeIndex];
@@ -350,8 +321,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
       if (!canvas) return;
       if (frame.kind === "image") {
         paintImage(canvas, frame);
-      } else if (fontState === "ready" && frame.segments && frame.turn !== 0) {
-        drawTape(canvas, frame.segments, `"${printFont}"`, frame.turn);
+      } else if (fontState === "ready" && frame.column && frame.turn !== 0) {
+        drawColumn(canvas, frame.page, `"${printFont}"`, frame.turn);
       } else if (fontState === "ready") {
         drawPage(canvas, frame.page, `"${printFont}"`, frame.turn);
       }
@@ -816,23 +787,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
               </Button>
             </div>
             <p className="text-sm text-muted-foreground">
-              {stretchLength
-                ? "Строка идёт слева направо, файл растёт в ширину. Если на ленте текст вверх ногами, выбери другое направление."
-                : "Само фото не становится широким: камера такое не печатает. Меняется только текст. Если на ленте он вверх ногами, выбери другое направление."}
-            </p>
-            <label className="flex items-center gap-2 text-sm" htmlFor="stretch-length">
-              <input
-                id="stretch-length"
-                type="checkbox"
-                checked={stretchLength}
-                onChange={(event) => setStretchLength(event.target.checked)}
-                className="size-4 accent-black"
-              />
-              Увеличить под длину
-            </label>
-            <p className="text-sm text-muted-foreground">
-              Весь текст в одном файле. Высота остаётся 960, растёт ширина — это
-              длина ленты. Первое число в подписи показывает, сколько камера берёт за раз.
+              На ленте получится колонка: строка идёт от длинного края бумаги к
+              длинному. Если колонка вверх ногами, выбери другое направление.
             </p>
           </div>
           ) : null}
@@ -872,30 +828,28 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                   ? `${previewFrames.length} ${framesWord(previewFrames.length)}${imageName ? ` · ${imageName}` : ""}${preparedImages.inverted ? " · тёмный фон стал белым" : ""}`
                   : "Перетащи снимок экрана: TIFF, PNG, JPEG и другие."
                 : plan && pages.length > 0
-                  ? alongTape && stretchLength && previewFrames[0]
-                    ? `${previewFrames.length} ${framesWord(previewFrames.length)} · ${previewFrames[0].width}×${previewFrames[0].height} · вся длина в одном файле`
+                  ? alongTape && previewFrames[0]
+                    ? `${previewFrames.length} ${framesWord(previewFrames.length)} · ${previewFrames[0].width}×${previewFrames[0].height} · колонка`
                     : `${pages.length} ${framesWord(pages.length)} · ${plan.maxChars} символов в строке · до ${plan.contentLineBudget} строк на кадр`
                   : "Здесь появится снимок для альбома камеры."}
             </p>
             {mode !== "image" && plan?.truncated ? (
               <p role="status" className="text-sm text-destructive">
                 {shape === "strip"
-                  ? stretchLength
-                    ? `В файл попали первые ${MAX_SCROLL_PAGES} частей. Сократи текст или сними галочку и печатай по фото.`
-                    : `На свиток попали первые ${MAX_SCROLL_PAGES} фото. Уменьши шрифт или сократи текст.`
+                  ? `В колонку попали первые ${MAX_SCROLL_PAGES} файлов. Сократи текст.`
                   : `На снимок попали первые ${MAX_PAGES} кадров. Уменьши шрифт или разрежь ${mode === "json" ? "JSON" : "текст"}.`}
               </p>
             ) : null}
-            {mode !== "image" && shape === "strip" && stretchLength && previewFrames[0] ? (
+            {mode !== "image" && shape === "strip" && previewFrames[0] ? (
               <p role="status" className="text-sm text-muted-foreground">
-                Ширина файла {previewFrames[0].width} пикселей. Если камера
-                откажется, это больше, чем она печатает за раз.
+                Ширина {previewFrames[0].width} пикселей — длина колонки вдоль
+                ленты. Высота {previewFrames[0].height} — ширина бумаги.
               </p>
             ) : null}
-            {mode !== "image" && shape === "strip" && !stretchLength && pages.length > 1 ? (
+            {mode !== "image" && shape === "strip" && pages.length > 1 ? (
               <p role="status" className="text-sm text-muted-foreground">
-                Печатай {photoFileName(photoStart)} и следующие по порядку и
-                складывай готовые листы сверху вниз.
+                Печатай {photoFileName(photoStart)} и следующие по порядку: колонка
+                продолжается.
               </p>
             ) : null}
             {mode === "image" && preparedImages?.truncated ? (
@@ -965,7 +919,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                             (mode === "text" ? note : source).trim()
                           ? "Подбираю шрифт для термопечати…"
                           : mode === "text"
-                            ? "Напиши текст слева. Свиток соберётся из обычных фото."
+                            ? "Напиши текст слева. Свиток соберётся колонкой."
                             : "Вставь JSON слева. Кадр соберётся здесь."
               }
             />
@@ -1079,8 +1033,8 @@ const FullscreenFrame = ({
     if (!canvas) return;
     if (frame.kind === "image") {
       paintImage(canvas, frame);
-    } else if (fontReady && frame.segments && frame.turn !== 0) {
-      drawTape(canvas, frame.segments, monoFamily, frame.turn);
+    } else if (fontReady && frame.column && frame.turn !== 0) {
+      drawColumn(canvas, frame.page, monoFamily, frame.turn);
     } else if (fontReady) {
       drawPage(canvas, frame.page, monoFamily, frame.turn);
     }

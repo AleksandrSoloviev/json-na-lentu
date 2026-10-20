@@ -116,35 +116,46 @@ const chunkLines = (lines: string[], size: number): string[][] => {
   return chunks;
 };
 
-export const contentLength = (
-  lines: string[],
-  charWidth: number,
-  padding: number,
-): number => {
-  const longest = lines.reduce((max, line) => Math.max(max, line.length), 0);
-  return padding * 2 + Math.ceil(longest * charWidth);
+export type ColumnOptions = {
+  fontSize: number;
+  lineHeight: number;
+  charWidth: number;
+  padding: number;
+  maxPages: number;
 };
 
-export const groupTapeSegments = (
-  pages: PagePlan[],
-  maxLength: number,
-): PagePlan[][] => {
-  const groups: PagePlan[][] = [];
-  let current: PagePlan[] = [];
-  let used = 0;
+export const planColumn = (text: string, options: ColumnOptions): PlanResult => {
+  const linePx = Math.ceil(options.fontSize * options.lineHeight);
+  const lineAxis = FRAME_WIDTH;
+  const usable = lineAxis - options.padding * 2 - WIDTH_FUDGE;
+  const maxChars = Math.max(1, Math.floor(usable / options.charWidth));
+  const maxLines = Math.max(
+    1,
+    Math.floor((MAX_PRINT_LENGTH - options.padding * 2) / linePx),
+  );
 
-  for (const page of pages) {
-    if (current.length > 0 && used + page.width > maxLength) {
-      groups.push(current);
-      current = [];
-      used = 0;
-    }
-    current.push(page);
-    used += page.width;
+  if (text.trim() === "") {
+    return { pages: [], truncated: false, maxChars, contentLineBudget: maxLines };
   }
 
-  if (current.length > 0) groups.push(current);
-  return groups;
+  const wrapped = wrapText(text, maxChars);
+  const chunks = chunkLines(wrapped, maxLines);
+  const limited = chunks.slice(0, Math.max(1, options.maxPages));
+  const pages = limited.map((lines) => ({
+    width: options.padding * 2 + lines.length * linePx,
+    height: lineAxis,
+    padding: options.padding,
+    fontSize: options.fontSize,
+    linePx,
+    lines,
+  }));
+
+  return {
+    pages,
+    truncated: chunks.length > limited.length,
+    maxChars,
+    contentLineBudget: maxLines,
+  };
 };
 
 export const planPages = (text: string, options: PlanOptions): PlanResult => {

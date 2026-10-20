@@ -8,8 +8,8 @@ export type PreviewFrame =
       width: number;
       height: number;
       page: PagePlan;
-      segments?: PagePlan[];
       turn: TextTurn;
+      column?: boolean;
     }
   | { kind: "image"; width: number; height: number; data: Uint8ClampedArray };
 
@@ -72,45 +72,37 @@ export const drawPage = (
   flattenInk(context, outputWidth, outputHeight);
 };
 
-export const drawTape = (
+export const drawColumn = (
   canvas: HTMLCanvasElement,
-  segments: PagePlan[],
+  page: PagePlan,
   fontFamily: string,
   turn: 90 | -90,
 ): void => {
-  const first = segments[0];
   const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!first || !context) return;
+  if (!context) return;
 
-  const outputWidth = segments.reduce((sum, segment) => sum + segment.width, 0);
-  const outputHeight = first.height;
+  const outputWidth = page.width;
+  const outputHeight = page.height;
   canvas.width = outputWidth;
   canvas.height = outputHeight;
   context.imageSmoothingEnabled = false;
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, outputWidth, outputHeight);
   context.save();
-  if (turn === -90) {
-    context.translate(outputWidth, outputHeight);
-    context.rotate(Math.PI);
+  if (turn === 90) {
+    context.translate(outputWidth, 0);
+    context.rotate(Math.PI / 2);
+  } else {
+    context.translate(0, outputHeight);
+    context.rotate(-Math.PI / 2);
   }
   context.fillStyle = "#000000";
+  context.font = `700 ${page.fontSize}px ${fontFamily}`;
   context.textBaseline = "top";
   context.textAlign = "left";
-
-  let cursor = 0;
-  for (const segment of segments) {
-    context.font = `700 ${segment.fontSize}px ${fontFamily}`;
-    segment.lines.forEach((line, index) => {
-      context.fillText(
-        line,
-        cursor + segment.padding,
-        segment.padding + index * segment.linePx,
-      );
-    });
-    cursor += segment.width;
-  }
-
+  page.lines.forEach((line, index) => {
+    context.fillText(line, page.padding, page.padding + index * page.linePx);
+  });
   context.restore();
   flattenInk(context, outputWidth, outputHeight);
 };

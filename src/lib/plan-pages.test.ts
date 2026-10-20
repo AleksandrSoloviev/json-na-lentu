@@ -2,14 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { parseJsonText } from "./json-text.ts";
-import {
-  contentLength,
-  groupTapeSegments,
-  planPages,
-  wrapLine,
-  type PagePlan,
-  type PlanOptions,
-} from "./plan-pages.ts";
+import { planColumn, planPages, wrapLine, type PlanOptions } from "./plan-pages.ts";
 
 const baseOptions = (overrides: Partial<PlanOptions> = {}): PlanOptions => ({
   width: 100,
@@ -107,27 +100,33 @@ test("planPages keeps a short scroll on a normal photo", () => {
   assert.equal(plan.pages[0]?.height, 80);
 });
 
-test("contentLength follows the longest line", () => {
-  assert.equal(contentLength(["аб", "абвгде"], 10, 4), 8 + 60);
+test("planColumn stacks lines across the width and keeps the paper side at 960", () => {
+  const plan = planColumn("раз\nдва\nтри", {
+    fontSize: 10,
+    lineHeight: 1,
+    charWidth: 10,
+    padding: 10,
+    maxPages: 4,
+  });
+  assert.equal(plan.pages.length, 1);
+  assert.equal(plan.pages[0]?.height, 960);
+  assert.equal(plan.pages[0]?.width, 20 + 3 * 10);
+  assert.deepEqual(plan.pages[0]?.lines, ["раз", "два", "три"]);
 });
 
-test("groupTapeSegments joins pages until the length limit", () => {
-  const page = (width: number): PagePlan => ({
-    width,
-    height: 100,
-    padding: 4,
-    fontSize: 10,
-    linePx: 12,
-    lines: ["аб"],
+test("planColumn wraps a line to the paper width and splits a long column", () => {
+  const plan = planColumn(`${"абвгдежзийклмн".repeat(3)}\n${"я\n".repeat(6)}`, {
+    fontSize: 8000,
+    lineHeight: 1,
+    charWidth: 100,
+    padding: 10,
+    maxPages: 2,
   });
-  const groups = groupTapeSegments([page(40), page(40), page(40)], 100);
-  assert.deepEqual(
-    groups.map((group) => group.map((item) => item.width)),
-    [
-      [40, 40],
-      [40],
-    ],
-  );
+  assert.ok(plan.maxChars < 20);
+  assert.equal(plan.pages[0]?.height, 960);
+  assert.equal(plan.pages.length, 2);
+  assert.equal(plan.truncated, true);
+  assert.ok((plan.pages[0]?.width ?? 0) > (plan.pages[0]?.height ?? 0));
 });
 
 test("planPages ignores blank input", () => {
