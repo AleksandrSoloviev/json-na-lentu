@@ -12,7 +12,6 @@ const baseOptions = (overrides: Partial<PlanOptions> = {}): PlanOptions => ({
   charWidth: 10,
   padding: 10,
   maxPages: 8,
-  maxStripHeight: 80,
   ...overrides,
 });
 
@@ -82,23 +81,23 @@ test("planPages reports that later frames were cut", () => {
   assert.equal(plan.pages[0]?.lines[0], "кадр 1/2");
 });
 
-test("planPages grows a strip downward without a frame header", () => {
+test("planPages continues a scroll on the next photo without a header", () => {
   const text = Array.from({ length: 12 }, () => "abcdefg").join("\n");
-  const plan = planPages(text, baseOptions({ width: 220, height: "strip" }));
+  const plan = planPages(text, baseOptions({ width: 220, header: false }));
   assert.equal(plan.contentLineBudget, 6);
   assert.equal(plan.pages.length, 2);
   assert.equal(plan.pages[0]?.lines[0], "abcdefg");
-  assert.equal(plan.pages[0]?.height, 220);
-  assert.equal(plan.pages[1]?.lines.length, 6);
-  assert.equal(plan.pages[1]?.height, 220);
+  assert.equal(plan.pages[0]?.height, 80);
+  assert.equal(plan.pages[1]?.lines[0], "abcdefg");
+  assert.equal(plan.pages[1]?.height, 80);
 });
 
-test("planPages keeps a short scroll from becoming a wide picture", () => {
-  const plan = planPages("записка", baseOptions({ width: 220, height: "strip" }));
+test("planPages keeps a short scroll on a normal photo", () => {
+  const plan = planPages("записка", baseOptions({ width: 220, header: false }));
   assert.equal(plan.pages.length, 1);
   assert.deepEqual(plan.pages[0]?.lines, ["записка"]);
   assert.equal(plan.pages[0]?.width, 220);
-  assert.equal(plan.pages[0]?.height, 220);
+  assert.equal(plan.pages[0]?.height, 80);
 });
 
 test("planPages ignores blank input", () => {

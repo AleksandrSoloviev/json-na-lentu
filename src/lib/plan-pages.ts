@@ -5,30 +5,27 @@ export const PRINT_PADDING = 56;
 export const PRINT_LINE_HEIGHT = 1.35;
 export const MAX_PAGES = 6;
 export const MAX_STRIP_HEIGHT = 2400;
-export const MAX_SCROLL_HEIGHT = 16384;
-export const MAX_SCROLL_PAGES = 8;
+export const MAX_SCROLL_PAGES = 12;
 export const WIDTH_FUDGE = 4;
 
 export type FrameShape = "frame" | "square" | "strip";
 
 export const frameGeometry = (
   shape: FrameShape,
-): { width: number; height: number | "strip" } => {
+): { width: number; height: number } => {
   if (shape === "square") return { width: SQUARE_SIZE, height: SQUARE_SIZE };
-  if (shape === "strip") return { width: FRAME_WIDTH, height: "strip" };
   return { width: FRAME_WIDTH, height: FRAME_HEIGHT };
 };
 
 export type PlanOptions = {
   width: number;
-  height: number | "strip";
+  height: number;
   fontSize: number;
   lineHeight: number;
   charWidth: number;
   padding: number;
   maxPages: number;
-  maxStripHeight: number;
-  minStripHeight?: number;
+  header?: boolean;
 };
 
 export type PagePlan = {
@@ -122,12 +119,10 @@ export const planPages = (text: string, options: PlanOptions): PlanResult => {
   const linePx = Math.ceil(options.fontSize * options.lineHeight);
   const usableWidth = options.width - options.padding * 2 - WIDTH_FUDGE;
   const maxChars = Math.max(1, Math.floor(usableWidth / options.charWidth));
-  const slotHeight =
-    options.height === "strip" ? options.maxStripHeight : options.height;
-  const innerHeight = Math.max(linePx * 2, slotHeight - options.padding * 2);
-  const continuous = options.height === "strip";
+  const innerHeight = Math.max(linePx * 2, options.height - options.padding * 2);
   const slots = Math.max(2, Math.floor(innerHeight / linePx));
-  const contentLineBudget = continuous ? slots : slots - 1;
+  const withHeader = options.header !== false;
+  const contentLineBudget = withHeader ? slots - 1 : slots;
 
   if (text.trim() === "") {
     return { pages: [], truncated: false, maxChars, contentLineBudget };
@@ -139,15 +134,10 @@ export const planPages = (text: string, options: PlanOptions): PlanResult => {
   const total = limited.length;
 
   const pages = limited.map((chunk, index) => {
-    const lines = continuous ? chunk : [pageHeader(index, total, maxChars), ...chunk];
-    const contentHeight = options.padding * 2 + lines.length * linePx;
-    const height =
-      options.height === "strip"
-        ? Math.max(options.minStripHeight ?? options.width, contentHeight)
-        : options.height;
+    const lines = withHeader ? [pageHeader(index, total, maxChars), ...chunk] : chunk;
     return {
       width: options.width,
-      height,
+      height: options.height,
       padding: options.padding,
       fontSize: options.fontSize,
       linePx,

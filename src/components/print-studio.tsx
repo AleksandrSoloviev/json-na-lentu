@@ -29,12 +29,9 @@ import { parseJsonText } from "@/lib/json-text";
 import { photoFileName } from "@/lib/photo-name";
 import { preparePlainText } from "@/lib/plain-text";
 import {
-  FRAME_HEIGHT,
   frameGeometry,
   MAX_PAGES,
-  MAX_SCROLL_HEIGHT,
   MAX_SCROLL_PAGES,
-  MAX_STRIP_HEIGHT,
   planPages,
   PRINT_LINE_HEIGHT,
   PRINT_PADDING,
@@ -63,7 +60,7 @@ const SHAPES: { id: FrameShape; label: string; hint: string }[] = [
   {
     id: "strip",
     label: "Свиток",
-    hint: "Ширина 8 см, строки слева направо, длина растёт вниз. Как узкая лента без конца.",
+    hint: "Те же фото, что и обычный кадр. Текст идёт сверху вниз и продолжается на следующем снимке.",
   },
 ];
 
@@ -214,8 +211,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
       charWidth,
       padding: PRINT_PADDING,
       maxPages: shape === "strip" ? MAX_SCROLL_PAGES : MAX_PAGES,
-      maxStripHeight: shape === "strip" ? MAX_SCROLL_HEIGHT : MAX_STRIP_HEIGHT,
-      minStripHeight: FRAME_HEIGHT,
+      header: shape !== "strip",
     });
   }, [charWidth, fontSize, geometry.height, geometry.width, printable, shape]);
 
@@ -780,22 +776,20 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                   ? `${previewFrames.length} ${framesWord(previewFrames.length)}${imageName ? ` · ${imageName}` : ""}${preparedImages.inverted ? " · тёмный фон стал белым" : ""}`
                   : "Перетащи снимок экрана: TIFF, PNG, JPEG и другие."
                 : plan && pages.length > 0
-                  ? shape === "strip"
-                    ? `${pages.length} ${framesWord(pages.length)} · ширина 8 см · ${plan.maxChars} символов в строке · вниз по ленте`
-                    : `${pages.length} ${framesWord(pages.length)} · ${plan.maxChars} символов в строке · до ${plan.contentLineBudget} строк на кадр`
+                  ? `${pages.length} ${framesWord(pages.length)} · ${plan.maxChars} символов в строке · до ${plan.contentLineBudget} строк на кадр`
                   : "Здесь появится снимок для альбома камеры."}
             </p>
             {mode !== "image" && plan?.truncated ? (
               <p role="status" className="text-sm text-destructive">
                 {shape === "strip"
-                  ? `На ленту попали первые ${MAX_SCROLL_PAGES} частей. Уменьши шрифт или сократи текст.`
+                  ? `На свиток попали первые ${MAX_SCROLL_PAGES} фото. Уменьши шрифт или сократи текст.`
                   : `На снимок попали первые ${MAX_PAGES} кадров. Уменьши шрифт или разрежь ${mode === "json" ? "JSON" : "текст"}.`}
               </p>
             ) : null}
             {mode !== "image" && shape === "strip" && pages.length > 1 ? (
               <p role="status" className="text-sm text-muted-foreground">
-                Лента длиннее одного файла. Печатай {photoFileName(photoStart)} и
-                следующие по порядку, сверху вниз.
+                Печатай {photoFileName(photoStart)} и следующие по порядку и
+                складывай готовые листы сверху вниз.
               </p>
             ) : null}
             {mode === "image" && preparedImages?.truncated ? (
@@ -865,7 +859,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                             (mode === "text" ? note : source).trim()
                           ? "Подбираю шрифт для термопечати…"
                           : mode === "text"
-                            ? "Напиши текст слева. Лента шириной 8 см соберётся здесь."
+                            ? "Напиши текст слева. Свиток соберётся из обычных фото."
                             : "Вставь JSON слева. Кадр соберётся здесь."
               }
             />
@@ -873,12 +867,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             <div className="space-y-6">
               {previewFrames.map((frame, index) => (
                 <figure key={`${frame.kind}-${index}`} className="space-y-2">
-                  <div
-                    className={cn(
-                      "border border-black bg-white shadow-[6px_6px_0_0_#1c1915]",
-                      mode !== "image" && shape === "strip" && "mx-auto w-[8cm] max-w-full",
-                    )}
-                  >
+                  <div className="border border-black bg-white shadow-[6px_6px_0_0_#1c1915]">
                     <canvas
                       ref={(node) => {
                         canvasRefs.current[index] = node;
@@ -890,10 +879,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                   </div>
                   <figcaption className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-sm text-muted-foreground">
-                      {photoFileName(photoStart + index)}
-                      {mode !== "image" && shape === "strip"
-                        ? " · ширина 8 см"
-                        : ` · ${frame.width}×${frame.height}`}
+                      {photoFileName(photoStart + index)} · {frame.width}×{frame.height}
                     </span>
                     <div className="flex gap-2">
                       <Button
