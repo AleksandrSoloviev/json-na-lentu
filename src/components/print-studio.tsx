@@ -16,7 +16,13 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { decodeImageFile } from "@/lib/decode-raster";
-import { canvasToJpeg, drawPage, paintImage, type PreviewFrame } from "@/lib/draw-page";
+import {
+  canvasToJpeg,
+  drawPage,
+  paintImage,
+  type PreviewFrame,
+  type TextTurn,
+} from "@/lib/draw-page";
 import {
   isImageFile,
   MAX_IMAGE_BYTES,
@@ -29,6 +35,8 @@ import { parseJsonText } from "@/lib/json-text";
 import { photoFileName } from "@/lib/photo-name";
 import { preparePlainText } from "@/lib/plain-text";
 import {
+  FRAME_HEIGHT,
+  FRAME_WIDTH,
   frameGeometry,
   MAX_PAGES,
   MAX_SCROLL_PAGES,
@@ -60,7 +68,7 @@ const SHAPES: { id: FrameShape; label: string; hint: string }[] = [
   {
     id: "strip",
     label: "Свиток",
-    hint: "Те же фото, что и обычный кадр. Текст идёт сверху вниз и продолжается на следующем снимке.",
+    hint: "Фото остаётся вертикальным. Текст на нём лежит на боку: камера повернёт снимок, и строка пойдёт вдоль ленты.",
   },
 ];
 
@@ -170,6 +178,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   const [pretty, setPretty] = useState(true);
   const [fontSize, setFontSize] = useState(DEFAULT_FONT);
   const [shape, setShape] = useState<FrameShape>("frame");
+  const [textTurn, setTextTurn] = useState<Exclude<TextTurn, 0>>(90);
   const [photoStart, setPhotoStart] = useState(0);
   const [charWidth, setCharWidth] = useState<number | null>(null);
   const [fontState, setFontState] = useState<FontState>("loading");
@@ -200,20 +209,21 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
           : parsed.raw
         : "";
   const geometry = frameGeometry(shape);
+  const alongTape = shape === "strip";
 
   const plan = useMemo(() => {
     if (!charWidth || !printable) return null;
     return planPages(printable, {
-      width: geometry.width,
-      height: geometry.height,
+      width: alongTape ? FRAME_HEIGHT : geometry.width,
+      height: alongTape ? FRAME_WIDTH : geometry.height,
       fontSize,
       lineHeight: PRINT_LINE_HEIGHT,
       charWidth,
       padding: PRINT_PADDING,
-      maxPages: shape === "strip" ? MAX_SCROLL_PAGES : MAX_PAGES,
-      header: shape !== "strip",
+      maxPages: alongTape ? MAX_SCROLL_PAGES : MAX_PAGES,
+      header: !alongTape,
     });
-  }, [charWidth, fontSize, geometry.height, geometry.width, printable, shape]);
+  }, [alongTape, charWidth, fontSize, geometry.height, geometry.width, printable]);
 
   const pages = useMemo(() => plan?.pages ?? [], [plan]);
   const preparedImages = useMemo(() => {
@@ -252,11 +262,12 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
     }
     return pages.map((page) => ({
       kind: "text" as const,
-      width: page.width,
-      height: page.height,
+      width: alongTape ? page.height : page.width,
+      height: alongTape ? page.width : page.height,
       page,
+      turn: alongTape ? textTurn : 0,
     }));
-  }, [mode, pages, preparedImages]);
+  }, [alongTape, mode, pages, preparedImages, textTurn]);
   const activeIndex =
     previewFrames.length === 0 ? 0 : Math.min(active, previewFrames.length - 1);
   const activeFrame = previewFrames[activeIndex];
@@ -302,7 +313,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
       if (frame.kind === "image") {
         paintImage(canvas, frame);
       } else if (fontState === "ready") {
-        drawPage(canvas, frame.page, `"${printFont}"`);
+        drawPage(canvas, frame.page, `"${printFont}"`, frame.turn);
       }
     });
   }, [fontState, previewFrames, printFont]);
@@ -741,6 +752,36 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
           </div>
           ) : null}
 
+          {mode !== "image" && shape === "strip" ? (
+          <div className="space-y-2">
+            <p className="text-sm font-medium" id="along-label">
+              Как положить текст на фото
+            </p>
+            <div role="group" aria-labelledby="along-label" className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant={textTurn === 90 ? "default" : "outline"}
+                aria-pressed={textTurn === 90}
+                onClick={() => setTextTurn(90)}
+              >
+                90°
+              </Button>
+              <Button
+                type="button"
+                variant={textTurn === -90 ? "default" : "outline"}
+                aria-pressed={textTurn === -90}
+                onClick={() => setTextTurn(-90)}
+              >
+                −90°
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Само фото не становится широким: камера такое не печатает. Меняется
+              только текст. Если на ленте он вверх ногами, выбери другое направление.
+            </p>
+          </div>
+          ) : null}
+
           <input
             ref={fileRef}
             type="file"
@@ -964,7 +1005,7 @@ const FullscreenFrame = ({
     if (frame.kind === "image") {
       paintImage(canvas, frame);
     } else if (fontReady) {
-      drawPage(canvas, frame.page, monoFamily);
+      drawPage(canvas, frame.page, monoFamily, frame.turn);
     }
   }, [fontReady, monoFamily, frame]);
 

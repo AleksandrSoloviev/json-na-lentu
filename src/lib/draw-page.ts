@@ -1,7 +1,9 @@
 import type { PagePlan } from "@/lib/plan-pages";
 
+export type TextTurn = 0 | 90 | -90;
+
 export type PreviewFrame =
-  | { kind: "text"; width: number; height: number; page: PagePlan }
+  | { kind: "text"; width: number; height: number; page: PagePlan; turn: TextTurn }
   | { kind: "image"; width: number; height: number; data: Uint8ClampedArray };
 
 const INK_CUTOFF = 188;
@@ -10,15 +12,26 @@ export const drawPage = (
   canvas: HTMLCanvasElement,
   page: PagePlan,
   fontFamily: string,
+  turn: TextTurn = 0,
 ): void => {
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) return;
 
-  canvas.width = page.width;
-  canvas.height = page.height;
+  const outputWidth = turn === 0 ? page.width : page.height;
+  const outputHeight = turn === 0 ? page.height : page.width;
+  canvas.width = outputWidth;
+  canvas.height = outputHeight;
   context.imageSmoothingEnabled = false;
   context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, page.width, page.height);
+  context.fillRect(0, 0, outputWidth, outputHeight);
+  context.save();
+  if (turn === 90) {
+    context.translate(outputWidth, 0);
+    context.rotate(Math.PI / 2);
+  } else if (turn === -90) {
+    context.translate(0, outputHeight);
+    context.rotate(-Math.PI / 2);
+  }
   context.fillStyle = "#000000";
   context.font = `700 ${page.fontSize}px ${fontFamily}`;
   context.textBaseline = "top";
@@ -27,8 +40,9 @@ export const drawPage = (
   page.lines.forEach((line, index) => {
     context.fillText(line, page.padding, page.padding + index * page.linePx);
   });
+  context.restore();
 
-  const image = context.getImageData(0, 0, page.width, page.height);
+  const image = context.getImageData(0, 0, outputWidth, outputHeight);
   const pixels = image.data;
   for (let index = 0; index < pixels.length; index += 4) {
     const luminance =
