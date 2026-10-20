@@ -15,7 +15,16 @@ import { Download, FileUp, Maximize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { canvasToJpeg, drawPage } from "@/lib/draw-page";
+import { decodeImageFile } from "@/lib/decode-raster";
+import { canvasToJpeg, drawPage, paintImage, type PreviewFrame } from "@/lib/draw-page";
+import {
+  isImageFile,
+  MAX_IMAGE_BYTES,
+  prepareImagePages,
+  type ImageFit,
+  type ImageInk,
+  type Raster,
+} from "@/lib/image-pages";
 import { parseJsonText } from "@/lib/json-text";
 import {
   frameGeometry,
@@ -25,7 +34,6 @@ import {
   PRINT_LINE_HEIGHT,
   PRINT_PADDING,
   type FrameShape,
-  type PagePlan,
 } from "@/lib/plan-pages";
 import { SAMPLE_JSON } from "@/lib/sample-json";
 import { cn } from "cn";
@@ -52,6 +60,47 @@ const SHAPES: { id: FrameShape; label: string; hint: string }[] = [
     hint: "Высота растёт вместе с текстом. Так печатай, только если камера выводит всю высоту снимка.",
   },
 ];
+
+const IMAGE_FITS: { id: ImageFit; label: string; hint: string }[] = [
+  {
+    id: "native",
+    label: "Как есть",
+    hint: "Пропорции снимка сохраняются. Широкий экран Mac остаётся широким.",
+  },
+  {
+    id: "frame",
+    label: "Кадр 3:4",
+    hint: "Весь снимок вписан в вертикальное фото.",
+  },
+  {
+    id: "square",
+    label: "Квадрат",
+    hint: "Весь снимок вписан в квадрат.",
+  },
+  {
+    id: "strip",
+    label: "Лента",
+    hint: "Длинный снимок режется сверху вниз на несколько кадров.",
+  },
+];
+
+const IMAGE_INKS: { id: ImageInk; label: string; hint: string }[] = [
+  {
+    id: "screenshot",
+    label: "Скриншот",
+    hint: "Текст и окна становятся чёрными на белом. Тёмное оформление Mac само переворачивается.",
+  },
+  {
+    id: "photo",
+    label: "Фото",
+    hint: "Полутона остаются точками, как на термоленте.",
+  },
+];
+
+const FILE_ACCEPT =
+  ".json,.txt,.tif,.tiff,.png,.jpg,.jpeg,.webp,.gif,.bmp,.heic,.heif,.avif,application/json,text/plain,image/*";
+
+type StudioMode = "json" | "image";
 
 const STEPS = [
   "Скачай JPEG. Для камеры это фотография.",
@@ -81,8 +130,10 @@ const framesWord = (count: number): string => {
   return "кадров";
 };
 
-const frameFileName = (index: number): string =>
-  `json-${String(index + 1).padStart(2, "0")}.jpg`;
+const frameFileName = (index: number, mode: StudioMode): string => {
+  const prefix = mode === "image" ? "snimok" : "json";
+  return `${prefix}-${String(index + 1).padStart(2, "0")}.jpg`;
+};
 
 const downloadBlob = (blob: Blob, filename: string): void => {
   const url = URL.createObjectURL(blob);
@@ -115,6 +166,13 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   const [notice, setNotice] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [active, setActive] = useState(0);
+  const [mode, setMode] = useState<StudioMode>("json");
+  const [rasters, setRasters] = useState<Raster[]>([]);
+  const [imageFit, setImageFit] = useState<ImageFit>("native");
+  const [imageInk, setImageInk] = useState<ImageInk>("screenshot");
+  const [imageName, setImageName] = useState("");
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [imageBusy, setImageBusy] = useState(false);
 
   const parsed = useMemo(() => parseJsonText(source), [source]);
   const printable = parsed.kind === "ok" ? (pretty ? parsed.pretty : parsed.raw) : "";
@@ -135,8 +193,53 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   }, [charWidth, fontSize, geometry.height, geometry.width, printable]);
 
   const pages = useMemo(() => plan?.pages ?? [], [plan]);
-  const activeIndex = pages.length === 0 ? 0 : Math.min(active, pages.length - 1);
+  const preparedImages = useMemo(() => {
+    if (rasters.length === 0) return null;
+    const imagePages: ReturnType<typeof prepareImagePages>["pages"] = [];
+    let truncated = false;
+    let inverted = false;
+    let remaining = MAX_PAGES;
+
+    for (const raster of rasters) {
+      if (remaining <= 0) {
+        truncated = true;
+        break;
+      }
+      const result = prepareImagePages(raster, {
+        fit: imageFit,
+        ink: imageInk,
+        maxPages: remaining,
+      });
+      imagePages.push(...result.pages);
+      remaining -= result.pages.length;
+      truncated = truncated || result.truncated;
+      inverted = inverted || result.inverted;
+    }
+
+    return { pages: imagePages, truncated, inverted };
+  }, [imageFit, imageInk, rasters]);
+  const previewFrames = useMemo((): PreviewFrame[] => {
+    if (mode === "image") {
+      return (preparedImages?.pages ?? []).map((page) => ({
+        kind: "image" as const,
+        width: page.width,
+        height: page.height,
+        data: page.data,
+      }));
+    }
+    return pages.map((page) => ({
+      kind: "text" as const,
+      width: page.width,
+      height: page.height,
+      page,
+    }));
+  }, [mode, pages, preparedImages]);
+  const activeIndex =
+    previewFrames.length === 0 ? 0 : Math.min(active, previewFrames.length - 1);
+  const activeFrame = previewFrames[activeIndex];
   const shapeHint = SHAPES.find((item) => item.id === shape)?.hint ?? "";
+  const imageFitHint = IMAGE_FITS.find((item) => item.id === imageFit)?.hint ?? "";
+  const imageInkHint = IMAGE_INKS.find((item) => item.id === imageInk)?.hint ?? "";
 
   useEffect(() => {
     let activeMeasure = true;
@@ -170,13 +273,17 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   }, [fontSize, printFont]);
 
   useLayoutEffect(() => {
-    if (fontState !== "ready") return;
-    pages.forEach((page, index) => {
+    previewFrames.forEach((frame, index) => {
       const canvas = canvasRefs.current[index];
       if (!canvas) return;
-      drawPage(canvas, page, `"${printFont}"`);
+      if (frame.kind === "image") {
+        paintImage(canvas, frame);
+        return;
+      }
+      if (fontState !== "ready") return;
+      drawPage(canvas, frame.page, `"${printFont}"`);
     });
-  }, [fontState, pages, printFont]);
+  }, [fontState, previewFrames, printFont]);
 
   const handleSource = (value: string) => {
     setFileError(null);
@@ -184,8 +291,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
     setSource(value);
   };
 
-  const handleFile = (file: File | undefined) => {
-    if (!file) return;
+  const readJsonFile = (file: File) => {
     if (file.size > 100_000) {
       setFileError("Файл больше 100 КБ. Раздели JSON на части.");
       return;
@@ -202,6 +308,44 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
     reader.readAsText(file);
   };
 
+  const loadImages = async (files: File[]) => {
+    setImageBusy(true);
+    setImageError(null);
+    setNotice(null);
+    setActive(0);
+    try {
+      const decoded: Raster[] = [];
+      for (const file of files) {
+        if (file.size > MAX_IMAGE_BYTES) {
+          throw new Error("Файл больше 80 МБ. Сохрани снимок поменьше.");
+        }
+        decoded.push(...(await decodeImageFile(file)));
+      }
+      if (decoded.length === 0) throw new Error("В файле нет изображения.");
+      setRasters(decoded);
+      setImageName(files.map((file) => file.name).join(", "));
+    } catch (error) {
+      setRasters([]);
+      setImageName("");
+      setImageError(error instanceof Error ? error.message : "Не удалось открыть снимок.");
+    } finally {
+      setImageBusy(false);
+    }
+  };
+
+  const handleIncomingFiles = (files: File[]) => {
+    const images = files.filter((file) => isImageFile(file));
+    if (images.length > 0) {
+      setMode("image");
+      void loadImages(images);
+      return;
+    }
+    const first = files[0];
+    if (!first) return;
+    setMode("json");
+    readJsonFile(first);
+  };
+
   const downloadFrame = async (index: number) => {
     const canvas = canvasRefs.current[index];
     if (!canvas) {
@@ -212,7 +356,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
     setNotice(null);
     try {
       const blob = await canvasToJpeg(canvas);
-      const filename = frameFileName(index);
+      const filename = frameFileName(index, mode);
       downloadBlob(blob, filename);
       setNotice(`Браузер сохраняет ${filename}`);
     } catch (error) {
@@ -223,8 +367,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   };
 
   const handleDownloadAll = async () => {
-    if (pages.length === 0) return;
-    if (pages.length === 1) {
+    if (previewFrames.length === 0) return;
+    if (previewFrames.length === 1) {
       await downloadFrame(0);
       return;
     }
@@ -233,15 +377,15 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
     setNotice(null);
     try {
       const entries: Record<string, Uint8Array> = {};
-      for (let index = 0; index < pages.length; index += 1) {
+      for (let index = 0; index < previewFrames.length; index += 1) {
         const canvas = canvasRefs.current[index];
         if (!canvas) throw new Error("Кадр ещё не собран. Подожди секунду и повтори.");
         const blob = await canvasToJpeg(canvas);
-        entries[frameFileName(index)] = new Uint8Array(await blob.arrayBuffer());
+        entries[frameFileName(index, mode)] = new Uint8Array(await blob.arrayBuffer());
       }
       const zipped = zipSync(entries, { level: 0 });
-      downloadBlob(new Blob([Uint8Array.from(zipped)]), "json-kadry.zip");
-      setNotice(`Браузер сохраняет архив из ${pages.length} кадров`);
+      downloadBlob(new Blob([Uint8Array.from(zipped)]), "kadry.zip");
+      setNotice(`Браузер сохраняет архив из ${previewFrames.length} кадров`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Не удалось скачать кадры");
     } finally {
@@ -264,13 +408,13 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
               className="inline-block h-9 w-7 border border-black bg-white shadow-[3px_3px_0_0_#1c1915]"
             />
             <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-              JSON на ленту
+              На ленту
             </h1>
           </div>
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground md:text-base">
-            Детская камера печатает снимок из своего альбома. Этот экран
-            собирает из JSON чёрно-белую фотографию: буквы крупные и без
-            серого, поэтому после термопечати их ещё можно прочитать.
+            Детская камера печатает снимок из своего альбома. Сюда можно
+            вставить JSON или снимок экрана Mac: TIFF в полном разрешении,
+            PNG, JPEG и другие картинки. На ленту уходит чёрно-белый JPEG.
           </p>
         </div>
       </header>
@@ -298,9 +442,32 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
           onDrop={(event) => {
             event.preventDefault();
             setDragOver(false);
-            handleFile(event.dataTransfer.files[0]);
+            handleIncomingFiles([...event.dataTransfer.files]);
           }}
         >
+          <div role="tablist" aria-label="Что печатать" className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              role="tab"
+              aria-selected={mode === "json"}
+              variant={mode === "json" ? "default" : "outline"}
+              onClick={() => setMode("json")}
+            >
+              JSON
+            </Button>
+            <Button
+              type="button"
+              role="tab"
+              aria-selected={mode === "image"}
+              variant={mode === "image" ? "default" : "outline"}
+              onClick={() => setMode("image")}
+            >
+              Картинка
+            </Button>
+          </div>
+
+          {mode === "json" ? (
+          <>
           <div className="space-y-2">
             <Label htmlFor={jsonId}>JSON</Label>
             <Textarea
@@ -341,17 +508,6 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
               <FileUp aria-hidden="true" />
               Открыть файл
             </Button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="application/json,.json,text/plain"
-              className="sr-only"
-              aria-label="Открыть JSON-файл"
-              onChange={(event) => {
-                handleFile(event.target.files?.[0]);
-                event.target.value = "";
-              }}
-            />
           </div>
 
           <label className="flex items-center gap-2 text-sm" htmlFor="pretty-json">
@@ -385,7 +541,79 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
               Крупнее надёжнее читается на термоленте.
             </p>
           </div>
+          </>
+          ) : (
+          <div className="space-y-5">
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="flex min-h-40 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border px-4 py-8 text-center hover:bg-muted"
+            >
+              <span className="text-sm font-medium">
+                {imageBusy ? "Читаю снимок…" : "Снимок экрана или картинка"}
+              </span>
+              <span className="max-w-sm text-sm leading-6 text-muted-foreground">
+                TIFF с Mac в полном разрешении, плюс PNG, JPEG, WebP, GIF и BMP.
+                Можно перетащить сразу несколько файлов.
+              </span>
+            </button>
+            <p
+              role={imageError ? "alert" : undefined}
+              className="min-h-5 text-sm text-destructive"
+            >
+              {imageError ?? ""}
+            </p>
+            {imageName ? (
+              <p className="break-all text-sm text-muted-foreground">{imageName}</p>
+            ) : null}
 
+            <div className="space-y-2">
+              <p className="text-sm font-medium" id="ink-label">
+                Как готовить картинку
+              </p>
+              <div role="group" aria-labelledby="ink-label" className="flex flex-wrap gap-2">
+                {IMAGE_INKS.map((item) => (
+                  <Button
+                    key={item.id}
+                    type="button"
+                    variant={imageInk === item.id ? "default" : "outline"}
+                    aria-pressed={imageInk === item.id}
+                    onClick={() => setImageInk(item.id)}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-sm text-muted-foreground">{imageInkHint}</p>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium" id="image-fit-label">
+                Форма отпечатка
+              </p>
+              <div
+                role="group"
+                aria-labelledby="image-fit-label"
+                className="flex flex-wrap gap-2"
+              >
+                {IMAGE_FITS.map((item) => (
+                  <Button
+                    key={item.id}
+                    type="button"
+                    variant={imageFit === item.id ? "default" : "outline"}
+                    aria-pressed={imageFit === item.id}
+                    onClick={() => setImageFit(item.id)}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-sm text-muted-foreground">{imageFitHint}</p>
+            </div>
+          </div>
+          )}
+
+          {mode === "json" ? (
           <div className="space-y-2">
             <p className="text-sm font-medium" id="shape-label">
               Форма отпечатка
@@ -409,6 +637,20 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             </div>
             <p className="text-sm text-muted-foreground">{shapeHint}</p>
           </div>
+          ) : null}
+
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            accept={FILE_ACCEPT}
+            className="sr-only"
+            aria-label="Открыть JSON или картинку"
+            onChange={(event) => {
+              handleIncomingFiles([...(event.target.files ?? [])]);
+              event.target.value = "";
+            }}
+          />
 
           <div className="space-y-2 border-t border-border pt-4">
             <h2 className="text-sm font-medium">Как напечатать</h2>
@@ -426,28 +668,37 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
         >
           <div className="space-y-1">
             <h2 className="text-sm font-medium">Кадры</h2>
-            <p className="text-sm text-muted-foreground" aria-live="polite">
-              {plan && pages.length > 0
-                ? `${pages.length} ${framesWord(pages.length)} · ${plan.maxChars} символов в строке · до ${plan.contentLineBudget} строк на кадр`
-                : "Здесь появится снимок для альбома камеры."}
+            <p className="break-all text-sm text-muted-foreground" aria-live="polite">
+              {mode === "image"
+                ? preparedImages && previewFrames.length > 0
+                  ? `${previewFrames.length} ${framesWord(previewFrames.length)}${imageName ? ` · ${imageName}` : ""}${preparedImages.inverted ? " · тёмный фон стал белым" : ""}`
+                  : "Перетащи снимок экрана: TIFF, PNG, JPEG и другие."
+                : plan && pages.length > 0
+                  ? `${pages.length} ${framesWord(pages.length)} · ${plan.maxChars} символов в строке · до ${plan.contentLineBudget} строк на кадр`
+                  : "Здесь появится снимок для альбома камеры."}
             </p>
-            {plan?.truncated ? (
+            {mode === "json" && plan?.truncated ? (
               <p role="status" className="text-sm text-destructive">
                 На снимок попали первые {MAX_PAGES} кадров. Уменьши шрифт или
                 разрежь JSON.
               </p>
             ) : null}
+            {mode === "image" && preparedImages?.truncated ? (
+              <p role="status" className="text-sm text-destructive">
+                На снимок попали первые {MAX_PAGES} кадров.
+              </p>
+            ) : null}
           </div>
 
-          {pages.length > 0 ? (
+          {previewFrames.length > 0 ? (
             <Button
               type="button"
               className="h-10 w-full"
-              disabled={busy || fontState !== "ready"}
+              disabled={busy || imageBusy || (mode === "json" && fontState !== "ready")}
               onClick={() => void handleDownloadAll()}
             >
               <Download aria-hidden="true" />
-              {pages.length === 1 ? "Скачать JPEG" : "Скачать все кадры"}
+              {previewFrames.length === 1 ? "Скачать JPEG" : "Скачать все кадры"}
             </Button>
           ) : null}
 
@@ -455,35 +706,41 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             {notice ?? ""}
           </p>
 
-          {pages.length === 0 ? (
+          {previewFrames.length === 0 ? (
             <EmptySheet
               message={
-                fontState === "error"
-                  ? "Шрифт не загрузился. Обнови страницу."
-                  : parsed.kind === "error"
-                    ? "Исправь JSON, и кадр появится снова."
-                    : fontState === "loading" && source.trim()
-                      ? "Подбираю шрифт для термопечати…"
-                      : "Вставь JSON слева. Кадр соберётся здесь."
+                mode === "image"
+                  ? imageBusy
+                    ? "Читаю снимок…"
+                    : imageError
+                      ? "Снимок не открылся. Попробуй PNG."
+                      : "Перетащи картинку слева. Кадр соберётся здесь."
+                  : fontState === "error"
+                    ? "Шрифт не загрузился. Обнови страницу."
+                    : parsed.kind === "error"
+                      ? "Исправь JSON, и кадр появится снова."
+                      : fontState === "loading" && source.trim()
+                        ? "Подбираю шрифт для термопечати…"
+                        : "Вставь JSON слева. Кадр соберётся здесь."
               }
             />
           ) : (
             <div className="space-y-6">
-              {pages.map((page, index) => (
-                <figure key={index} className="space-y-2">
+              {previewFrames.map((frame, index) => (
+                <figure key={`${frame.kind}-${index}`} className="space-y-2">
                   <div className="border border-black bg-white shadow-[6px_6px_0_0_#1c1915]">
                     <canvas
                       ref={(node) => {
                         canvasRefs.current[index] = node;
                       }}
                       role="img"
-                      aria-label={`Кадр ${index + 1} из ${pages.length}`}
+                      aria-label={`Кадр ${index + 1} из ${previewFrames.length}`}
                       className="block h-auto w-full"
                     />
                   </div>
                   <figcaption className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-sm text-muted-foreground">
-                      {page.width}×{page.height}
+                      {frame.width}×{frame.height}
                     </span>
                     <div className="flex gap-2">
                       <Button
@@ -513,17 +770,17 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
         </aside>
       </main>
 
-      {fullscreen && pages[activeIndex] ? (
+      {fullscreen && activeFrame ? (
         <FullscreenFrame
-          page={pages[activeIndex] as PagePlan}
+          frame={activeFrame}
           index={activeIndex}
-          total={pages.length}
+          total={previewFrames.length}
           monoFamily={`"${printFont}"`}
           fontReady={fontState === "ready"}
           onClose={() => setFullscreen(false)}
           onPrev={() => setActive((current) => Math.max(0, current - 1))}
           onNext={() =>
-            setActive((current) => Math.min(pages.length - 1, current + 1))
+            setActive((current) => Math.min(previewFrames.length - 1, current + 1))
           }
         />
       ) : null}
@@ -538,7 +795,7 @@ const EmptySheet = ({ message }: { message: string }) => (
 );
 
 type FullscreenFrameProps = {
-  page: PagePlan;
+  frame: PreviewFrame;
   index: number;
   total: number;
   monoFamily: string;
@@ -549,7 +806,7 @@ type FullscreenFrameProps = {
 };
 
 const FullscreenFrame = ({
-  page,
+  frame,
   index,
   total,
   monoFamily,
@@ -563,11 +820,15 @@ const FullscreenFrame = ({
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
-    if (!fontReady) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    drawPage(canvas, page, monoFamily);
-  }, [fontReady, monoFamily, page]);
+    if (frame.kind === "image") {
+      paintImage(canvas, frame);
+      return;
+    }
+    if (!fontReady) return;
+    drawPage(canvas, frame.page, monoFamily);
+  }, [fontReady, monoFamily, frame]);
 
   useEffect(() => {
     const previouslyFocused = document.activeElement;
@@ -625,7 +886,7 @@ const FullscreenFrame = ({
           aria-label={`Кадр ${index + 1} из ${total}`}
           className="h-auto max-w-full"
           style={{
-            width: `min(96vw, calc((100dvh - 7rem) * ${page.width / page.height}))`,
+            width: `min(96vw, calc((100dvh - 7rem) * ${frame.width / frame.height}))`,
           }}
         />
       </div>

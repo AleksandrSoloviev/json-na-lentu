@@ -5,9 +5,9 @@ import { mono, sans } from "@/lib/fonts";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "JSON на ленту",
+  title: "На ленту",
   description:
-    "Чёрно-белые кадры из JSON для детской камеры с моментальной термопечатью.",
+    "Чёрно-белые кадры из JSON и снимков экрана для детской камеры с термопечатью.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

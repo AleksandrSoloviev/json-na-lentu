@@ -1,5 +1,9 @@
 import type { PagePlan } from "@/lib/plan-pages";
 
+export type PreviewFrame =
+  | { kind: "text"; width: number; height: number; page: PagePlan }
+  | { kind: "image"; width: number; height: number; data: Uint8ClampedArray };
+
 const INK_CUTOFF = 188;
 
 export const drawPage = (
@@ -38,6 +42,18 @@ export const drawPage = (
     pixels[index + 3] = 255;
   }
   context.putImageData(image, 0, 0);
+};
+
+export const paintImage = (
+  canvas: HTMLCanvasElement,
+  page: { width: number; height: number; data: Uint8ClampedArray },
+): void => {
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return;
+  canvas.width = page.width;
+  canvas.height = page.height;
+  const copy = new Uint8ClampedArray(page.data);
+  context.putImageData(new ImageData(copy, page.width, page.height), 0, 0);
 };
 
 export const canvasToJpeg = (canvas: HTMLCanvasElement): Promise<Blob> =>
