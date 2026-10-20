@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { parseJsonText } from "./json-text.ts";
-import { planPages, wrapLine, type PlanOptions } from "./plan-pages.ts";
+import {
+  contentLength,
+  groupTapeSegments,
+  planPages,
+  wrapLine,
+  type PagePlan,
+  type PlanOptions,
+} from "./plan-pages.ts";
 
 const baseOptions = (overrides: Partial<PlanOptions> = {}): PlanOptions => ({
   width: 100,
@@ -98,6 +105,29 @@ test("planPages keeps a short scroll on a normal photo", () => {
   assert.deepEqual(plan.pages[0]?.lines, ["записка"]);
   assert.equal(plan.pages[0]?.width, 220);
   assert.equal(plan.pages[0]?.height, 80);
+});
+
+test("contentLength follows the longest line", () => {
+  assert.equal(contentLength(["аб", "абвгде"], 10, 4), 8 + 60);
+});
+
+test("groupTapeSegments joins pages until the length limit", () => {
+  const page = (width: number): PagePlan => ({
+    width,
+    height: 100,
+    padding: 4,
+    fontSize: 10,
+    linePx: 12,
+    lines: ["аб"],
+  });
+  const groups = groupTapeSegments([page(40), page(40), page(40)], 100);
+  assert.deepEqual(
+    groups.map((group) => group.map((item) => item.width)),
+    [
+      [40, 40],
+      [40],
+    ],
+  );
 });
 
 test("planPages ignores blank input", () => {

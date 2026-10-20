@@ -3,10 +3,38 @@ import type { PagePlan } from "@/lib/plan-pages";
 export type TextTurn = 0 | 90 | -90;
 
 export type PreviewFrame =
-  | { kind: "text"; width: number; height: number; page: PagePlan; turn: TextTurn }
+  | {
+      kind: "text";
+      width: number;
+      height: number;
+      page: PagePlan;
+      segments?: PagePlan[];
+      turn: TextTurn;
+    }
   | { kind: "image"; width: number; height: number; data: Uint8ClampedArray };
 
 const INK_CUTOFF = 188;
+
+const flattenInk = (
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): void => {
+  const image = context.getImageData(0, 0, width, height);
+  const pixels = image.data;
+  for (let index = 0; index < pixels.length; index += 4) {
+    const luminance =
+      pixels[index] * 0.299 +
+      pixels[index + 1] * 0.587 +
+      pixels[index + 2] * 0.114;
+    const value = luminance < INK_CUTOFF ? 0 : 255;
+    pixels[index] = value;
+    pixels[index + 1] = value;
+    pixels[index + 2] = value;
+    pixels[index + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+};
 
 export const drawPage = (
   canvas: HTMLCanvasElement,
@@ -41,21 +69,53 @@ export const drawPage = (
     context.fillText(line, page.padding, page.padding + index * page.linePx);
   });
   context.restore();
+  flattenInk(context, outputWidth, outputHeight);
+};
 
-  const image = context.getImageData(0, 0, outputWidth, outputHeight);
-  const pixels = image.data;
-  for (let index = 0; index < pixels.length; index += 4) {
-    const luminance =
-      pixels[index] * 0.299 +
-      pixels[index + 1] * 0.587 +
-      pixels[index + 2] * 0.114;
-    const value = luminance < INK_CUTOFF ? 0 : 255;
-    pixels[index] = value;
-    pixels[index + 1] = value;
-    pixels[index + 2] = value;
-    pixels[index + 3] = 255;
+export const drawTape = (
+  canvas: HTMLCanvasElement,
+  segments: PagePlan[],
+  fontFamily: string,
+  turn: 90 | -90,
+): void => {
+  const first = segments[0];
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!first || !context) return;
+
+  const outputWidth = first.height;
+  const outputHeight = segments.reduce((sum, segment) => sum + segment.width, 0);
+  canvas.width = outputWidth;
+  canvas.height = outputHeight;
+  context.imageSmoothingEnabled = false;
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, outputWidth, outputHeight);
+  context.save();
+  if (turn === 90) {
+    context.translate(outputWidth, 0);
+    context.rotate(Math.PI / 2);
+  } else {
+    context.translate(0, outputHeight);
+    context.rotate(-Math.PI / 2);
   }
-  context.putImageData(image, 0, 0);
+  context.fillStyle = "#000000";
+  context.textBaseline = "top";
+  context.textAlign = "left";
+
+  let cursor = 0;
+  for (const segment of segments) {
+    context.font = `700 ${segment.fontSize}px ${fontFamily}`;
+    segment.lines.forEach((line, index) => {
+      context.fillText(
+        line,
+        cursor + segment.padding,
+        segment.padding + index * segment.linePx,
+      );
+    });
+    cursor += segment.width;
+  }
+
+  context.restore();
+  flattenInk(context, outputWidth, outputHeight);
 };
 
 export const paintImage = (

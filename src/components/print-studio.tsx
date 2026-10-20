@@ -19,6 +19,7 @@ import { decodeImageFile } from "@/lib/decode-raster";
 import {
   canvasToJpeg,
   drawPage,
+  drawTape,
   paintImage,
   type PreviewFrame,
   type TextTurn,
@@ -35,10 +36,13 @@ import { parseJsonText } from "@/lib/json-text";
 import { photoFileName } from "@/lib/photo-name";
 import { preparePlainText } from "@/lib/plain-text";
 import {
+  contentLength,
   FRAME_HEIGHT,
   FRAME_WIDTH,
   frameGeometry,
+  groupTapeSegments,
   MAX_PAGES,
+  MAX_PRINT_LENGTH,
   MAX_SCROLL_PAGES,
   planPages,
   PRINT_LINE_HEIGHT,
@@ -179,6 +183,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   const [fontSize, setFontSize] = useState(DEFAULT_FONT);
   const [shape, setShape] = useState<FrameShape>("frame");
   const [textTurn, setTextTurn] = useState<Exclude<TextTurn, 0>>(90);
+  const [stretchLength, setStretchLength] = useState(false);
   const [photoStart, setPhotoStart] = useState(0);
   const [charWidth, setCharWidth] = useState<number | null>(null);
   const [fontState, setFontState] = useState<FontState>("loading");
@@ -213,8 +218,9 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
 
   const plan = useMemo(() => {
     if (!charWidth || !printable) return null;
+    const stretch = alongTape && stretchLength;
     return planPages(printable, {
-      width: alongTape ? FRAME_HEIGHT : geometry.width,
+      width: alongTape ? (stretch ? MAX_PRINT_LENGTH : FRAME_HEIGHT) : geometry.width,
       height: alongTape ? FRAME_WIDTH : geometry.height,
       fontSize,
       lineHeight: PRINT_LINE_HEIGHT,
@@ -223,7 +229,15 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
       maxPages: alongTape ? MAX_SCROLL_PAGES : MAX_PAGES,
       header: !alongTape,
     });
-  }, [alongTape, charWidth, fontSize, geometry.height, geometry.width, printable]);
+  }, [
+    alongTape,
+    charWidth,
+    fontSize,
+    geometry.height,
+    geometry.width,
+    printable,
+    stretchLength,
+  ]);
 
   const pages = useMemo(() => plan?.pages ?? [], [plan]);
   const preparedImages = useMemo(() => {
@@ -260,6 +274,30 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
         data: page.data,
       }));
     }
+    if (alongTape && stretchLength && charWidth) {
+      const fitted = pages.map((page) => ({
+        ...page,
+        width: Math.min(
+          MAX_PRINT_LENGTH,
+          contentLength(page.lines, charWidth, page.padding),
+        ),
+      }));
+      return groupTapeSegments(fitted, MAX_PRINT_LENGTH).flatMap((segments) => {
+        const first = segments[0];
+        if (!first) return [];
+        const length = segments.reduce((sum, segment) => sum + segment.width, 0);
+        return [
+          {
+            kind: "text" as const,
+            width: first.height,
+            height: length,
+            page: first,
+            segments,
+            turn: textTurn,
+          },
+        ];
+      });
+    }
     return pages.map((page) => ({
       kind: "text" as const,
       width: alongTape ? page.height : page.width,
@@ -267,7 +305,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
       page,
       turn: alongTape ? textTurn : 0,
     }));
-  }, [alongTape, mode, pages, preparedImages, textTurn]);
+  }, [alongTape, charWidth, mode, pages, preparedImages, stretchLength, textTurn]);
   const activeIndex =
     previewFrames.length === 0 ? 0 : Math.min(active, previewFrames.length - 1);
   const activeFrame = previewFrames[activeIndex];
@@ -312,6 +350,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
       if (!canvas) return;
       if (frame.kind === "image") {
         paintImage(canvas, frame);
+      } else if (fontState === "ready" && frame.segments && frame.turn !== 0) {
+        drawTape(canvas, frame.segments, `"${printFont}"`, frame.turn);
       } else if (fontState === "ready") {
         drawPage(canvas, frame.page, `"${printFont}"`, frame.turn);
       }
@@ -779,6 +819,20 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
               Само фото не становится широким: камера такое не печатает. Меняется
               только текст. Если на ленте он вверх ногами, выбери другое направление.
             </p>
+            <label className="flex items-center gap-2 text-sm" htmlFor="stretch-length">
+              <input
+                id="stretch-length"
+                type="checkbox"
+                checked={stretchLength}
+                onChange={(event) => setStretchLength(event.target.checked)}
+                className="size-4 accent-black"
+              />
+              Увеличить под длину
+            </label>
+            <p className="text-sm text-muted-foreground">
+              Весь текст в одном файле, фото растёт вдоль ленты. В подписи будет
+              высота в пикселях: так видно, сколько камера берёт за раз.
+            </p>
           </div>
           ) : null}
 
@@ -817,17 +871,27 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                   ? `${previewFrames.length} ${framesWord(previewFrames.length)}${imageName ? ` · ${imageName}` : ""}${preparedImages.inverted ? " · тёмный фон стал белым" : ""}`
                   : "Перетащи снимок экрана: TIFF, PNG, JPEG и другие."
                 : plan && pages.length > 0
-                  ? `${pages.length} ${framesWord(pages.length)} · ${plan.maxChars} символов в строке · до ${plan.contentLineBudget} строк на кадр`
+                  ? alongTape && stretchLength && previewFrames[0]
+                    ? `${previewFrames.length} ${framesWord(previewFrames.length)} · ${previewFrames[0].width}×${previewFrames[0].height} · вся длина в одном файле`
+                    : `${pages.length} ${framesWord(pages.length)} · ${plan.maxChars} символов в строке · до ${plan.contentLineBudget} строк на кадр`
                   : "Здесь появится снимок для альбома камеры."}
             </p>
             {mode !== "image" && plan?.truncated ? (
               <p role="status" className="text-sm text-destructive">
                 {shape === "strip"
-                  ? `На свиток попали первые ${MAX_SCROLL_PAGES} фото. Уменьши шрифт или сократи текст.`
+                  ? stretchLength
+                    ? `В файл попали первые ${MAX_SCROLL_PAGES} частей. Сократи текст или сними галочку и печатай по фото.`
+                    : `На свиток попали первые ${MAX_SCROLL_PAGES} фото. Уменьши шрифт или сократи текст.`
                   : `На снимок попали первые ${MAX_PAGES} кадров. Уменьши шрифт или разрежь ${mode === "json" ? "JSON" : "текст"}.`}
               </p>
             ) : null}
-            {mode !== "image" && shape === "strip" && pages.length > 1 ? (
+            {mode !== "image" && shape === "strip" && stretchLength && previewFrames[0] ? (
+              <p role="status" className="text-sm text-muted-foreground">
+                Длина файла {previewFrames[0].height} пикселей. Если камера
+                откажется, это больше, чем она печатает за раз.
+              </p>
+            ) : null}
+            {mode !== "image" && shape === "strip" && !stretchLength && pages.length > 1 ? (
               <p role="status" className="text-sm text-muted-foreground">
                 Печатай {photoFileName(photoStart)} и следующие по порядку и
                 складывай готовые листы сверху вниз.
@@ -1004,6 +1068,8 @@ const FullscreenFrame = ({
     if (!canvas) return;
     if (frame.kind === "image") {
       paintImage(canvas, frame);
+    } else if (fontReady && frame.segments && frame.turn !== 0) {
+      drawTape(canvas, frame.segments, monoFamily, frame.turn);
     } else if (fontReady) {
       drawPage(canvas, frame.page, monoFamily, frame.turn);
     }

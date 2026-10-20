@@ -6,6 +6,7 @@ export const PRINT_LINE_HEIGHT = 1.35;
 export const MAX_PAGES = 6;
 export const MAX_STRIP_HEIGHT = 2400;
 export const MAX_SCROLL_PAGES = 12;
+export const MAX_PRINT_LENGTH = 16384;
 export const WIDTH_FUDGE = 4;
 
 export type FrameShape = "frame" | "square" | "strip";
@@ -113,6 +114,37 @@ const chunkLines = (lines: string[], size: number): string[][] => {
     chunks.push(lines.slice(index, index + size));
   }
   return chunks;
+};
+
+export const contentLength = (
+  lines: string[],
+  charWidth: number,
+  padding: number,
+): number => {
+  const longest = lines.reduce((max, line) => Math.max(max, line.length), 0);
+  return padding * 2 + Math.ceil(longest * charWidth);
+};
+
+export const groupTapeSegments = (
+  pages: PagePlan[],
+  maxLength: number,
+): PagePlan[][] => {
+  const groups: PagePlan[][] = [];
+  let current: PagePlan[] = [];
+  let used = 0;
+
+  for (const page of pages) {
+    if (current.length > 0 && used + page.width > maxLength) {
+      groups.push(current);
+      current = [];
+      used = 0;
+    }
+    current.push(page);
+    used += page.width;
+  }
+
+  if (current.length > 0) groups.push(current);
+  return groups;
 };
 
 export const planPages = (text: string, options: PlanOptions): PlanResult => {
