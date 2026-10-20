@@ -24,6 +24,8 @@ npm run dev
 
 Открой [http://127.0.0.1:43123](http://127.0.0.1:43123).
 
+Готовая страница публикуется на GitHub Pages при каждом пуше в `main`: [aleksandrsoloviev.github.io/json-na-lentu](https://aleksandrsoloviev.github.io/json-na-lentu/).
+
 Проверка раскладки кадров:
 
 ```bash

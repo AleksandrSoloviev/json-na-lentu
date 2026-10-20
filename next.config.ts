@@ -1,9 +1,10 @@
 import type { NextConfig } from "next";
 
+const pages = process.env.GITHUB_PAGES === "true";
+const basePath = "/json-na-lentu";
+
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
-  cacheComponents: true,
-  partialPrefetching: true,
   turbopack: {
     rules: {
       "*.css": {
@@ -12,6 +13,18 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  ...(pages
+    ? {
+        output: "export",
+        basePath,
+        assetPrefix: basePath,
+        trailingSlash: true,
+        distDir: ".next-pages",
+      }
+    : {
+        cacheComponents: true,
+        partialPrefetching: true,
+      }),
 };
 
 export default nextConfig;
