@@ -82,20 +82,17 @@ export const drawTape = (
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!first || !context) return;
 
-  const outputWidth = first.height;
-  const outputHeight = segments.reduce((sum, segment) => sum + segment.width, 0);
+  const outputWidth = segments.reduce((sum, segment) => sum + segment.width, 0);
+  const outputHeight = first.height;
   canvas.width = outputWidth;
   canvas.height = outputHeight;
   context.imageSmoothingEnabled = false;
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, outputWidth, outputHeight);
   context.save();
-  if (turn === 90) {
-    context.translate(outputWidth, 0);
-    context.rotate(Math.PI / 2);
-  } else {
-    context.translate(0, outputHeight);
-    context.rotate(-Math.PI / 2);
+  if (turn === -90) {
+    context.translate(outputWidth, outputHeight);
+    context.rotate(Math.PI);
   }
   context.fillStyle = "#000000";
   context.textBaseline = "top";

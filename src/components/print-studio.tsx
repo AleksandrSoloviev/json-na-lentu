@@ -289,8 +289,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
         return [
           {
             kind: "text" as const,
-            width: first.height,
-            height: length,
+            width: length,
+            height: first.height,
             page: first,
             segments,
             turn: textTurn,
@@ -816,8 +816,9 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
               </Button>
             </div>
             <p className="text-sm text-muted-foreground">
-              Само фото не становится широким: камера такое не печатает. Меняется
-              только текст. Если на ленте он вверх ногами, выбери другое направление.
+              {stretchLength
+                ? "Строка идёт слева направо, файл растёт в ширину. Если на ленте текст вверх ногами, выбери другое направление."
+                : "Само фото не становится широким: камера такое не печатает. Меняется только текст. Если на ленте он вверх ногами, выбери другое направление."}
             </p>
             <label className="flex items-center gap-2 text-sm" htmlFor="stretch-length">
               <input
@@ -830,8 +831,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
               Увеличить под длину
             </label>
             <p className="text-sm text-muted-foreground">
-              Весь текст в одном файле, фото растёт вдоль ленты. В подписи будет
-              высота в пикселях: так видно, сколько камера берёт за раз.
+              Весь текст в одном файле. Высота остаётся 960, растёт ширина — это
+              длина ленты. Первое число в подписи показывает, сколько камера берёт за раз.
             </p>
           </div>
           ) : null}
@@ -887,7 +888,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             ) : null}
             {mode !== "image" && shape === "strip" && stretchLength && previewFrames[0] ? (
               <p role="status" className="text-sm text-muted-foreground">
-                Длина файла {previewFrames[0].height} пикселей. Если камера
+                Ширина файла {previewFrames[0].width} пикселей. Если камера
                 откажется, это больше, чем она печатает за раз.
               </p>
             ) : null}
@@ -972,14 +973,24 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             <div className="space-y-6">
               {previewFrames.map((frame, index) => (
                 <figure key={`${frame.kind}-${index}`} className="space-y-2">
-                  <div className="border border-black bg-white shadow-[6px_6px_0_0_#1c1915]">
+                  <div
+                    className={
+                      frame.width > frame.height
+                        ? "w-full overflow-x-auto border border-black bg-white shadow-[6px_6px_0_0_#1c1915]"
+                        : "border border-black bg-white shadow-[6px_6px_0_0_#1c1915]"
+                    }
+                  >
                     <canvas
                       ref={(node) => {
                         canvasRefs.current[index] = node;
                       }}
                       role="img"
                       aria-label={`Кадр ${index + 1} из ${previewFrames.length}`}
-                      className="block h-auto w-full"
+                      className={
+                        frame.width > frame.height
+                          ? "block h-48 w-auto max-w-none"
+                          : "block h-auto w-full"
+                      }
                     />
                   </div>
                   <figcaption className="flex flex-wrap items-center justify-between gap-2">
@@ -1124,14 +1135,23 @@ const FullscreenFrame = ({
       className="fixed inset-0 z-50 flex flex-col bg-neutral-950"
       onKeyDown={handleKeyDown}
     >
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-white p-3">
+      <div
+        className={
+          frame.width > frame.height
+            ? "flex min-h-0 flex-1 items-start justify-start overflow-auto bg-white p-3"
+            : "flex min-h-0 flex-1 items-center justify-center bg-white p-3"
+        }
+      >
         <canvas
           ref={canvasRef}
           role="img"
           aria-label={`Кадр ${index + 1} из ${total}`}
-          className="h-auto max-w-full"
+          className="h-auto max-w-none"
           style={{
-            width: `min(96vw, calc((100dvh - 7rem) * ${frame.width / frame.height}))`,
+            width:
+              frame.width > frame.height
+                ? `calc((100dvh - 7rem) * ${frame.width / frame.height})`
+                : `min(96vw, calc((100dvh - 7rem) * ${frame.width / frame.height}))`,
           }}
         />
       </div>
