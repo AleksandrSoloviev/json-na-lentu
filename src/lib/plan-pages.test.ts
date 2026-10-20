@@ -116,7 +116,7 @@ test("planColumn stacks lines across the width and keeps the paper side at 960",
   });
   assert.equal(plan.pages.length, 1);
   assert.equal(plan.pages[0]?.height, 960);
-  assert.equal(plan.pages[0]?.width, 20 + 3 * 10);
+  assert.equal(plan.pages[0]?.width, COLUMN_MAX_WIDTH);
   assert.deepEqual(plan.pages[0]?.lines, ["раз", "два", "три"]);
 });
 
@@ -130,12 +130,13 @@ test("planColumn keeps each scroll file within 2000×960", () => {
     maxPages: 12,
   });
   const linePx = Math.ceil(56 * 1.35);
+  const maxLines = Math.floor((COLUMN_MAX_WIDTH - 112) / linePx);
   assert.ok(plan.pages.length >= 2);
   assert.equal(plan.truncated, false);
   for (const page of plan.pages) {
     assert.equal(page.height, 960);
-    assert.ok(page.width <= COLUMN_MAX_WIDTH);
-    assert.equal(page.width, 112 + page.lines.length * linePx);
+    assert.equal(page.width, COLUMN_MAX_WIDTH);
+    assert.ok(page.lines.length <= maxLines);
   }
   assert.equal(
     plan.pages.reduce((sum, page) => sum + page.lines.length, 0),

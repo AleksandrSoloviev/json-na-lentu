@@ -843,8 +843,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             ) : null}
             {mode !== "image" && shape === "strip" && previewFrames[0] ? (
               <p role="status" className="text-sm text-muted-foreground">
-                Камера берёт один свиток до {COLUMN_MAX_WIDTH}×{previewFrames[0].height}.
-                Этот кадр — {previewFrames[0].width}×{previewFrames[0].height}.
+                Каждый свиток — {COLUMN_MAX_WIDTH}×{previewFrames[0].height}. Камера
+                печатает только такой широкий кадр.
               </p>
             ) : null}
             {mode !== "image" && shape === "strip" && pages.length > 1 ? (

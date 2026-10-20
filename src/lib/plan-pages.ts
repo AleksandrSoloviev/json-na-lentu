@@ -142,7 +142,7 @@ export const planColumn = (text: string, options: ColumnOptions): PlanResult => 
   const chunks = chunkLines(wrapped, maxLines);
   const limited = chunks.slice(0, Math.max(1, options.maxPages));
   const pages = limited.map((lines) => ({
-    width: options.padding * 2 + lines.length * linePx,
+    width: COLUMN_MAX_WIDTH,
     height: lineAxis,
     padding: options.padding,
     fontSize: options.fontSize,
