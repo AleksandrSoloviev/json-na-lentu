@@ -26,6 +26,7 @@ import {
   type Raster,
 } from "@/lib/image-pages";
 import { parseJsonText } from "@/lib/json-text";
+import { turnCanvas, type QuarterTurn } from "@/lib/rotate-quarter";
 import {
   frameGeometry,
   MAX_PAGES,
@@ -158,6 +159,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   const [pretty, setPretty] = useState(true);
   const [fontSize, setFontSize] = useState(DEFAULT_FONT);
   const [shape, setShape] = useState<FrameShape>("frame");
+  const [turn, setTurn] = useState<QuarterTurn>(0);
   const [charWidth, setCharWidth] = useState<number | null>(null);
   const [fontState, setFontState] = useState<FontState>("loading");
   const [fileError, setFileError] = useState<string | null>(null);
@@ -278,12 +280,14 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
       if (!canvas) return;
       if (frame.kind === "image") {
         paintImage(canvas, frame);
+      } else if (fontState === "ready") {
+        drawPage(canvas, frame.page, `"${printFont}"`);
+      } else {
         return;
       }
-      if (fontState !== "ready") return;
-      drawPage(canvas, frame.page, `"${printFont}"`);
+      turnCanvas(canvas, turn);
     });
-  }, [fontState, previewFrames, printFont]);
+  }, [fontState, previewFrames, printFont, turn]);
 
   const handleSource = (value: string) => {
     setFileError(null);
@@ -639,6 +643,34 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
           </div>
           ) : null}
 
+          <fieldset className="m-0 min-w-0 space-y-2 border-0 p-0">
+            <legend className="text-sm font-medium">Поворот отпечатка</legend>
+            <label className="flex items-center gap-2 text-sm" htmlFor="turn-clockwise">
+              <input
+                id="turn-clockwise"
+                type="checkbox"
+                checked={turn === 90}
+                onChange={(event) => setTurn(event.target.checked ? 90 : 0)}
+                className="size-4 accent-black"
+              />
+              Повернуть на 90°
+            </label>
+            <label className="flex items-center gap-2 text-sm" htmlFor="turn-counter">
+              <input
+                id="turn-counter"
+                type="checkbox"
+                checked={turn === -90}
+                onChange={(event) => setTurn(event.target.checked ? -90 : 0)}
+                className="size-4 accent-black"
+              />
+              Повернуть на −90°
+            </label>
+            <p className="text-sm text-muted-foreground">
+              Бумага выходит сбоку. Отметь одно направление, скачай JPEG и
+              проверь, как текст ложится на отпечаток.
+            </p>
+          </fieldset>
+
           <input
             ref={fileRef}
             type="file"
@@ -740,7 +772,9 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                   </div>
                   <figcaption className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-sm text-muted-foreground">
-                      {frame.width}×{frame.height}
+                      {turn === 0 ? frame.width : frame.height}×
+                      {turn === 0 ? frame.height : frame.width}
+                      {turn === 0 ? "" : turn === 90 ? " · 90°" : " · −90°"}
                     </span>
                     <div className="flex gap-2">
                       <Button
@@ -777,6 +811,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
           total={previewFrames.length}
           monoFamily={`"${printFont}"`}
           fontReady={fontState === "ready"}
+          turn={turn}
           onClose={() => setFullscreen(false)}
           onPrev={() => setActive((current) => Math.max(0, current - 1))}
           onNext={() =>
@@ -800,6 +835,7 @@ type FullscreenFrameProps = {
   total: number;
   monoFamily: string;
   fontReady: boolean;
+  turn: QuarterTurn;
   onClose: () => void;
   onPrev: () => void;
   onNext: () => void;
@@ -811,6 +847,7 @@ const FullscreenFrame = ({
   total,
   monoFamily,
   fontReady,
+  turn,
   onClose,
   onPrev,
   onNext,
@@ -824,11 +861,13 @@ const FullscreenFrame = ({
     if (!canvas) return;
     if (frame.kind === "image") {
       paintImage(canvas, frame);
+    } else if (fontReady) {
+      drawPage(canvas, frame.page, monoFamily);
+    } else {
       return;
     }
-    if (!fontReady) return;
-    drawPage(canvas, frame.page, monoFamily);
-  }, [fontReady, monoFamily, frame]);
+    turnCanvas(canvas, turn);
+  }, [fontReady, monoFamily, frame, turn]);
 
   useEffect(() => {
     const previouslyFocused = document.activeElement;
@@ -886,7 +925,10 @@ const FullscreenFrame = ({
           aria-label={`Кадр ${index + 1} из ${total}`}
           className="h-auto max-w-full"
           style={{
-            width: `min(96vw, calc((100dvh - 7rem) * ${frame.width / frame.height}))`,
+            width: `min(96vw, calc((100dvh - 7rem) * ${
+              (turn === 0 ? frame.width : frame.height) /
+              (turn === 0 ? frame.height : frame.width)
+            }))`,
           }}
         />
       </div>
