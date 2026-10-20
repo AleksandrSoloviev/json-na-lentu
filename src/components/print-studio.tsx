@@ -36,6 +36,7 @@ import { parseJsonText } from "@/lib/json-text";
 import { photoFileName } from "@/lib/photo-name";
 import { preparePlainText } from "@/lib/plain-text";
 import {
+  COLUMN_MAX_WIDTH,
   frameGeometry,
   MAX_PAGES,
   MAX_SCROLL_PAGES,
@@ -842,8 +843,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             ) : null}
             {mode !== "image" && shape === "strip" && previewFrames[0] ? (
               <p role="status" className="text-sm text-muted-foreground">
-                Ширина {previewFrames[0].width} пикселей — длина колонки вдоль
-                ленты. Высота {previewFrames[0].height} — ширина бумаги.
+                Камера берёт один свиток до {COLUMN_MAX_WIDTH}×{previewFrames[0].height}.
+                Этот кадр — {previewFrames[0].width}×{previewFrames[0].height}.
               </p>
             ) : null}
             {mode !== "image" && shape === "strip" && pages.length > 1 ? (

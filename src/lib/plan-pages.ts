@@ -6,7 +6,7 @@ export const PRINT_LINE_HEIGHT = 1.35;
 export const MAX_PAGES = 6;
 export const MAX_STRIP_HEIGHT = 2400;
 export const MAX_SCROLL_PAGES = 12;
-export const MAX_PRINT_LENGTH = 16384;
+export const COLUMN_MAX_WIDTH = 2000;
 export const WIDTH_FUDGE = 4;
 
 export type FrameShape = "frame" | "square" | "strip";
@@ -131,7 +131,7 @@ export const planColumn = (text: string, options: ColumnOptions): PlanResult => 
   const maxChars = Math.max(1, Math.floor(usable / options.charWidth));
   const maxLines = Math.max(
     1,
-    Math.floor((MAX_PRINT_LENGTH - options.padding * 2) / linePx),
+    Math.floor((COLUMN_MAX_WIDTH - options.padding * 2) / linePx),
   );
 
   if (text.trim() === "") {

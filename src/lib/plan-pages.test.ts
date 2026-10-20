@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { parseJsonText } from "./json-text.ts";
-import { planColumn, planPages, wrapLine, type PlanOptions } from "./plan-pages.ts";
+import {
+  COLUMN_MAX_WIDTH,
+  planColumn,
+  planPages,
+  wrapLine,
+  type PlanOptions,
+} from "./plan-pages.ts";
 
 const baseOptions = (overrides: Partial<PlanOptions> = {}): PlanOptions => ({
   width: 100,
@@ -114,19 +120,27 @@ test("planColumn stacks lines across the width and keeps the paper side at 960",
   assert.deepEqual(plan.pages[0]?.lines, ["раз", "два", "три"]);
 });
 
-test("planColumn wraps a line to the paper width and splits a long column", () => {
-  const plan = planColumn(`${"абвгдежзийклмн".repeat(3)}\n${"я\n".repeat(6)}`, {
-    fontSize: 8000,
-    lineHeight: 1,
-    charWidth: 100,
-    padding: 10,
-    maxPages: 2,
+test("planColumn keeps each scroll file within 2000×960", () => {
+  const text = Array.from({ length: 50 }, (_, index) => `строка ${index + 1}`).join("\n");
+  const plan = planColumn(text, {
+    fontSize: 56,
+    lineHeight: 1.35,
+    charWidth: 34,
+    padding: 56,
+    maxPages: 12,
   });
-  assert.ok(plan.maxChars < 20);
-  assert.equal(plan.pages[0]?.height, 960);
-  assert.equal(plan.pages.length, 2);
-  assert.equal(plan.truncated, true);
-  assert.ok((plan.pages[0]?.width ?? 0) > (plan.pages[0]?.height ?? 0));
+  const linePx = Math.ceil(56 * 1.35);
+  assert.ok(plan.pages.length >= 2);
+  assert.equal(plan.truncated, false);
+  for (const page of plan.pages) {
+    assert.equal(page.height, 960);
+    assert.ok(page.width <= COLUMN_MAX_WIDTH);
+    assert.equal(page.width, 112 + page.lines.length * linePx);
+  }
+  assert.equal(
+    plan.pages.reduce((sum, page) => sum + page.lines.length, 0),
+    50,
+  );
 });
 
 test("planPages ignores blank input", () => {
