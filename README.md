@@ -15,6 +15,8 @@
 
 ## Запуск
 
+Нужен Node.js 20 или новее (проверялось на 22) и npm.
+
 ```bash
 npm install
 npm run dev
@@ -26,6 +28,13 @@ npm run dev
 
 ```bash
 npm test
+```
+
+Сборка для запуска без режима разработки:
+
+```bash
+npm run build
+npm start
 ```
 
 ## Как напечатать с Mac
