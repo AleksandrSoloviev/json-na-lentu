@@ -26,11 +26,14 @@ import {
   type Raster,
 } from "@/lib/image-pages";
 import { parseJsonText } from "@/lib/json-text";
+import { photoFileName } from "@/lib/photo-name";
 import { preparePlainText } from "@/lib/plain-text";
-import { turnCanvas, type QuarterTurn } from "@/lib/rotate-quarter";
 import {
+  FRAME_HEIGHT,
   frameGeometry,
   MAX_PAGES,
+  MAX_SCROLL_HEIGHT,
+  MAX_SCROLL_PAGES,
   MAX_STRIP_HEIGHT,
   planPages,
   PRINT_LINE_HEIGHT,
@@ -59,8 +62,8 @@ const SHAPES: { id: FrameShape; label: string; hint: string }[] = [
   },
   {
     id: "strip",
-    label: "Лента",
-    hint: "Высота растёт вместе с текстом. Так печатай, только если камера выводит всю высоту снимка.",
+    label: "Свиток",
+    hint: "Ширина 8 см, строки слева направо, длина растёт вниз. Как узкая лента без конца.",
   },
 ];
 
@@ -106,7 +109,7 @@ const FILE_ACCEPT =
 type StudioMode = "json" | "text" | "image";
 
 const STEPS = [
-  "Скачай JPEG. Для камеры это фотография.",
+  "Скачай файл PHO00000.JPG. Камера принимает только такое имя.",
   "Вставь карту памяти и подключи камеру к Mac. Без карты она часто видна только как веб-камера, и диска нет.",
   "Скопируй файл на карту. У VTech KidiZoom это папка DOWNLOAD/PHOTO на диске VTech 5491. На остальных камерах положи JPEG в DCIM.",
   "Извлеки камеру, открой снимок в альбоме и нажми кнопку печати на корпусе.",
@@ -131,11 +134,6 @@ const framesWord = (count: number): string => {
   if (mod10 === 1 && mod100 !== 11) return "кадр";
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "кадра";
   return "кадров";
-};
-
-const frameFileName = (index: number, mode: StudioMode): string => {
-  const prefix = mode === "image" ? "snimok" : mode === "text" ? "tekst" : "json";
-  return `${prefix}-${String(index + 1).padStart(2, "0")}.jpg`;
 };
 
 const readFileText = (file: File): Promise<string> =>
@@ -165,6 +163,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   const textId = useId();
   const textErrorId = useId();
   const sizeId = useId();
+  const photoId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
   const canvasRefs = useRef<Array<HTMLCanvasElement | null>>([]);
   const printFont = primaryFontFamily(monoFamily);
@@ -174,7 +173,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   const [pretty, setPretty] = useState(true);
   const [fontSize, setFontSize] = useState(DEFAULT_FONT);
   const [shape, setShape] = useState<FrameShape>("frame");
-  const [turn, setTurn] = useState<QuarterTurn>(0);
+  const [photoStart, setPhotoStart] = useState(0);
   const [charWidth, setCharWidth] = useState<number | null>(null);
   const [fontState, setFontState] = useState<FontState>("loading");
   const [fileError, setFileError] = useState<string | null>(null);
@@ -214,10 +213,11 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
       lineHeight: PRINT_LINE_HEIGHT,
       charWidth,
       padding: PRINT_PADDING,
-      maxPages: MAX_PAGES,
-      maxStripHeight: MAX_STRIP_HEIGHT,
+      maxPages: shape === "strip" ? MAX_SCROLL_PAGES : MAX_PAGES,
+      maxStripHeight: shape === "strip" ? MAX_SCROLL_HEIGHT : MAX_STRIP_HEIGHT,
+      minStripHeight: FRAME_HEIGHT,
     });
-  }, [charWidth, fontSize, geometry.height, geometry.width, printable]);
+  }, [charWidth, fontSize, geometry.height, geometry.width, printable, shape]);
 
   const pages = useMemo(() => plan?.pages ?? [], [plan]);
   const preparedImages = useMemo(() => {
@@ -307,12 +307,9 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
         paintImage(canvas, frame);
       } else if (fontState === "ready") {
         drawPage(canvas, frame.page, `"${printFont}"`);
-      } else {
-        return;
       }
-      turnCanvas(canvas, turn);
     });
-  }, [fontState, previewFrames, printFont, turn]);
+  }, [fontState, previewFrames, printFont]);
 
   const handleSource = (value: string) => {
     setFileError(null);
@@ -385,6 +382,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
     if (!only) return;
     const target = texts.length === 1 && isJsonFile(only) ? "json" : "text";
     setMode(target);
+    if (target === "text") setShape("strip");
     void readTextFiles(texts, target);
   };
 
@@ -398,8 +396,9 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
     setNotice(null);
     try {
       const blob = await canvasToJpeg(canvas);
-      const filename = frameFileName(index, mode);
+      const filename = photoFileName(photoStart + index);
       downloadBlob(blob, filename);
+      setPhotoStart((current) => Math.min(99999, current + index + 1));
       setNotice(`Браузер сохраняет ${filename}`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Не удалось скачать кадр");
@@ -423,11 +422,14 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
         const canvas = canvasRefs.current[index];
         if (!canvas) throw new Error("Кадр ещё не собран. Подожди секунду и повтори.");
         const blob = await canvasToJpeg(canvas);
-        entries[frameFileName(index, mode)] = new Uint8Array(await blob.arrayBuffer());
+        entries[photoFileName(photoStart + index)] = new Uint8Array(await blob.arrayBuffer());
       }
       const zipped = zipSync(entries, { level: 0 });
-      downloadBlob(new Blob([Uint8Array.from(zipped)]), "kadry.zip");
-      setNotice(`Браузер сохраняет архив из ${previewFrames.length} кадров`);
+      const first = photoFileName(photoStart);
+      const last = photoFileName(photoStart + previewFrames.length - 1);
+      downloadBlob(new Blob([Uint8Array.from(zipped)]), `${first.replace(/\.JPG$/, "")}.zip`);
+      setPhotoStart((current) => Math.min(99999, current + previewFrames.length));
+      setNotice(`В архиве ${first}–${last}. На карту копируй сами JPG, не архив.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Не удалось скачать кадры");
     } finally {
@@ -508,6 +510,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
               onClick={() => {
                 setFileError(null);
                 setMode("text");
+                setShape("strip");
               }}
             >
               Текст
@@ -742,34 +745,6 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
           </div>
           ) : null}
 
-          <fieldset className="m-0 min-w-0 space-y-2 border-0 p-0">
-            <legend className="text-sm font-medium">Поворот отпечатка</legend>
-            <label className="flex items-center gap-2 text-sm" htmlFor="turn-clockwise">
-              <input
-                id="turn-clockwise"
-                type="checkbox"
-                checked={turn === 90}
-                onChange={(event) => setTurn(event.target.checked ? 90 : 0)}
-                className="size-4 accent-black"
-              />
-              Повернуть на 90°
-            </label>
-            <label className="flex items-center gap-2 text-sm" htmlFor="turn-counter">
-              <input
-                id="turn-counter"
-                type="checkbox"
-                checked={turn === -90}
-                onChange={(event) => setTurn(event.target.checked ? -90 : 0)}
-                className="size-4 accent-black"
-              />
-              Повернуть на −90°
-            </label>
-            <p className="text-sm text-muted-foreground">
-              Бумага выходит сбоку. Отметь одно направление, скачай JPEG и
-              проверь, как текст ложится на отпечаток.
-            </p>
-          </fieldset>
-
           <input
             ref={fileRef}
             type="file"
@@ -805,13 +780,22 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                   ? `${previewFrames.length} ${framesWord(previewFrames.length)}${imageName ? ` · ${imageName}` : ""}${preparedImages.inverted ? " · тёмный фон стал белым" : ""}`
                   : "Перетащи снимок экрана: TIFF, PNG, JPEG и другие."
                 : plan && pages.length > 0
-                  ? `${pages.length} ${framesWord(pages.length)} · ${plan.maxChars} символов в строке · до ${plan.contentLineBudget} строк на кадр`
+                  ? shape === "strip"
+                    ? `${pages.length} ${framesWord(pages.length)} · ширина 8 см · ${plan.maxChars} символов в строке · вниз по ленте`
+                    : `${pages.length} ${framesWord(pages.length)} · ${plan.maxChars} символов в строке · до ${plan.contentLineBudget} строк на кадр`
                   : "Здесь появится снимок для альбома камеры."}
             </p>
             {mode !== "image" && plan?.truncated ? (
               <p role="status" className="text-sm text-destructive">
-                На снимок попали первые {MAX_PAGES} кадров. Уменьши шрифт или
-                разрежь {mode === "json" ? "JSON" : "текст"}.
+                {shape === "strip"
+                  ? `На ленту попали первые ${MAX_SCROLL_PAGES} частей. Уменьши шрифт или сократи текст.`
+                  : `На снимок попали первые ${MAX_PAGES} кадров. Уменьши шрифт или разрежь ${mode === "json" ? "JSON" : "текст"}.`}
+              </p>
+            ) : null}
+            {mode !== "image" && shape === "strip" && pages.length > 1 ? (
+              <p role="status" className="text-sm text-muted-foreground">
+                Лента длиннее одного файла. Печатай {photoFileName(photoStart)} и
+                следующие по порядку, сверху вниз.
               </p>
             ) : null}
             {mode === "image" && preparedImages?.truncated ? (
@@ -821,15 +805,40 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             ) : null}
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor={photoId}>Номер файла</Label>
+            <input
+              id={photoId}
+              type="number"
+              min={0}
+              max={99999}
+              step={1}
+              inputMode="numeric"
+              value={photoStart}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                if (!Number.isFinite(value)) return;
+                setPhotoStart(Math.min(99999, Math.max(0, Math.trunc(value))));
+              }}
+              className="w-full rounded-md border border-border bg-white px-3 py-2 font-mono text-sm"
+            />
+            <p className="text-sm text-muted-foreground">
+              Камера берёт только имена вида PHO00000.JPG. Следующий файл —{" "}
+              {photoFileName(photoStart)}.
+            </p>
+          </div>
+
           {previewFrames.length > 0 ? (
             <Button
               type="button"
-              className="h-10 w-full"
+              className="h-auto min-h-10 w-full whitespace-normal py-2"
               disabled={busy || imageBusy || (mode !== "image" && fontState !== "ready")}
               onClick={() => void handleDownloadAll()}
             >
               <Download aria-hidden="true" />
-              {previewFrames.length === 1 ? "Скачать JPEG" : "Скачать все кадры"}
+              {previewFrames.length === 1
+                ? `Скачать ${photoFileName(photoStart)}`
+                : `Скачать ${photoFileName(photoStart)} и следующие`}
             </Button>
           ) : null}
 
@@ -856,7 +865,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                             (mode === "text" ? note : source).trim()
                           ? "Подбираю шрифт для термопечати…"
                           : mode === "text"
-                            ? "Напиши текст слева. Кадр соберётся здесь."
+                            ? "Напиши текст слева. Лента шириной 8 см соберётся здесь."
                             : "Вставь JSON слева. Кадр соберётся здесь."
               }
             />
@@ -864,7 +873,12 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             <div className="space-y-6">
               {previewFrames.map((frame, index) => (
                 <figure key={`${frame.kind}-${index}`} className="space-y-2">
-                  <div className="border border-black bg-white shadow-[6px_6px_0_0_#1c1915]">
+                  <div
+                    className={cn(
+                      "border border-black bg-white shadow-[6px_6px_0_0_#1c1915]",
+                      mode !== "image" && shape === "strip" && "mx-auto w-[8cm] max-w-full",
+                    )}
+                  >
                     <canvas
                       ref={(node) => {
                         canvasRefs.current[index] = node;
@@ -876,9 +890,10 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                   </div>
                   <figcaption className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-sm text-muted-foreground">
-                      {turn === 0 ? frame.width : frame.height}×
-                      {turn === 0 ? frame.height : frame.width}
-                      {turn === 0 ? "" : turn === 90 ? " · 90°" : " · −90°"}
+                      {photoFileName(photoStart + index)}
+                      {mode !== "image" && shape === "strip"
+                        ? " · ширина 8 см"
+                        : ` · ${frame.width}×${frame.height}`}
                     </span>
                     <div className="flex gap-2">
                       <Button
@@ -915,7 +930,6 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
           total={previewFrames.length}
           monoFamily={`"${printFont}"`}
           fontReady={fontState === "ready"}
-          turn={turn}
           onClose={() => setFullscreen(false)}
           onPrev={() => setActive((current) => Math.max(0, current - 1))}
           onNext={() =>
@@ -939,7 +953,6 @@ type FullscreenFrameProps = {
   total: number;
   monoFamily: string;
   fontReady: boolean;
-  turn: QuarterTurn;
   onClose: () => void;
   onPrev: () => void;
   onNext: () => void;
@@ -951,7 +964,6 @@ const FullscreenFrame = ({
   total,
   monoFamily,
   fontReady,
-  turn,
   onClose,
   onPrev,
   onNext,
@@ -967,11 +979,8 @@ const FullscreenFrame = ({
       paintImage(canvas, frame);
     } else if (fontReady) {
       drawPage(canvas, frame.page, monoFamily);
-    } else {
-      return;
     }
-    turnCanvas(canvas, turn);
-  }, [fontReady, monoFamily, frame, turn]);
+  }, [fontReady, monoFamily, frame]);
 
   useEffect(() => {
     const previouslyFocused = document.activeElement;
@@ -1029,10 +1038,7 @@ const FullscreenFrame = ({
           aria-label={`Кадр ${index + 1} из ${total}`}
           className="h-auto max-w-full"
           style={{
-            width: `min(96vw, calc((100dvh - 7rem) * ${
-              (turn === 0 ? frame.width : frame.height) /
-              (turn === 0 ? frame.height : frame.width)
-            }))`,
+            width: `min(96vw, calc((100dvh - 7rem) * ${frame.width / frame.height}))`,
           }}
         />
       </div>

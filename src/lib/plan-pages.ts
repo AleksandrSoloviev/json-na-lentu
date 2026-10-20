@@ -5,6 +5,8 @@ export const PRINT_PADDING = 56;
 export const PRINT_LINE_HEIGHT = 1.35;
 export const MAX_PAGES = 6;
 export const MAX_STRIP_HEIGHT = 2400;
+export const MAX_SCROLL_HEIGHT = 16384;
+export const MAX_SCROLL_PAGES = 8;
 export const WIDTH_FUDGE = 4;
 
 export type FrameShape = "frame" | "square" | "strip";
@@ -26,6 +28,7 @@ export type PlanOptions = {
   padding: number;
   maxPages: number;
   maxStripHeight: number;
+  minStripHeight?: number;
 };
 
 export type PagePlan = {
@@ -122,8 +125,9 @@ export const planPages = (text: string, options: PlanOptions): PlanResult => {
   const slotHeight =
     options.height === "strip" ? options.maxStripHeight : options.height;
   const innerHeight = Math.max(linePx * 2, slotHeight - options.padding * 2);
+  const continuous = options.height === "strip";
   const slots = Math.max(2, Math.floor(innerHeight / linePx));
-  const contentLineBudget = slots - 1;
+  const contentLineBudget = continuous ? slots : slots - 1;
 
   if (text.trim() === "") {
     return { pages: [], truncated: false, maxChars, contentLineBudget };
@@ -135,10 +139,11 @@ export const planPages = (text: string, options: PlanOptions): PlanResult => {
   const total = limited.length;
 
   const pages = limited.map((chunk, index) => {
-    const lines = [pageHeader(index, total, maxChars), ...chunk];
+    const lines = continuous ? chunk : [pageHeader(index, total, maxChars), ...chunk];
+    const contentHeight = options.padding * 2 + lines.length * linePx;
     const height =
       options.height === "strip"
-        ? options.padding * 2 + lines.length * linePx
+        ? Math.max(options.minStripHeight ?? options.width, contentHeight)
         : options.height;
     return {
       width: options.width,
