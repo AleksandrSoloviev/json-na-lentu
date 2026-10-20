@@ -19,7 +19,7 @@ npm install
 npm run dev
 ```
 
-Открой [http://localhost:3000](http://localhost:3000).
+Открой [http://127.0.0.1:43123](http://127.0.0.1:43123).
 
 Проверка раскладки кадров:
 
