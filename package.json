@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test src/lib/plan-pages.test.ts src/lib/image-pages.test.ts src/lib/rotate-quarter.test.ts"
+    "test": "node --experimental-strip-types --test src/lib/plan-pages.test.ts src/lib/image-pages.test.ts src/lib/rotate-quarter.test.ts src/lib/plain-text.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

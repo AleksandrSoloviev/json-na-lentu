@@ -26,6 +26,7 @@ import {
   type Raster,
 } from "@/lib/image-pages";
 import { parseJsonText } from "@/lib/json-text";
+import { preparePlainText } from "@/lib/plain-text";
 import { turnCanvas, type QuarterTurn } from "@/lib/rotate-quarter";
 import {
   frameGeometry,
@@ -37,6 +38,7 @@ import {
   type FrameShape,
 } from "@/lib/plan-pages";
 import { SAMPLE_JSON } from "@/lib/sample-json";
+import { SAMPLE_TEXT } from "@/lib/sample-text";
 import { cn } from "cn";
 
 const MIN_FONT = 44;
@@ -48,7 +50,7 @@ const SHAPES: { id: FrameShape; label: string; hint: string }[] = [
   {
     id: "frame",
     label: "Кадр 3:4",
-    hint: "Обычное фото. Длинный JSON продолжится на следующем кадре.",
+    hint: "Обычное фото. Длинный текст продолжится на следующем кадре.",
   },
   {
     id: "square",
@@ -101,7 +103,7 @@ const IMAGE_INKS: { id: ImageInk; label: string; hint: string }[] = [
 const FILE_ACCEPT =
   ".json,.txt,.tif,.tiff,.png,.jpg,.jpeg,.webp,.gif,.bmp,.heic,.heif,.avif,application/json,text/plain,image/*";
 
-type StudioMode = "json" | "image";
+type StudioMode = "json" | "text" | "image";
 
 const STEPS = [
   "Скачай JPEG. Для камеры это фотография.",
@@ -132,9 +134,19 @@ const framesWord = (count: number): string => {
 };
 
 const frameFileName = (index: number, mode: StudioMode): string => {
-  const prefix = mode === "image" ? "snimok" : "json";
+  const prefix = mode === "image" ? "snimok" : mode === "text" ? "tekst" : "json";
   return `${prefix}-${String(index + 1).padStart(2, "0")}.jpg`;
 };
+
+const readFileText = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(new Error("Не удалось прочитать файл."));
+    reader.readAsText(file);
+  });
+
+const isJsonFile = (file: File): boolean => file.name.toLowerCase().endsWith(".json");
 
 const downloadBlob = (blob: Blob, filename: string): void => {
   const url = URL.createObjectURL(blob);
@@ -150,12 +162,15 @@ const downloadBlob = (blob: Blob, filename: string): void => {
 export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   const jsonId = useId();
   const errorId = useId();
+  const textId = useId();
+  const textErrorId = useId();
   const sizeId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
   const canvasRefs = useRef<Array<HTMLCanvasElement | null>>([]);
   const printFont = primaryFontFamily(monoFamily);
 
   const [source, setSource] = useState("");
+  const [note, setNote] = useState("");
   const [pretty, setPretty] = useState(true);
   const [fontSize, setFontSize] = useState(DEFAULT_FONT);
   const [shape, setShape] = useState<FrameShape>("frame");
@@ -177,7 +192,17 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   const [imageBusy, setImageBusy] = useState(false);
 
   const parsed = useMemo(() => parseJsonText(source), [source]);
-  const printable = parsed.kind === "ok" ? (pretty ? parsed.pretty : parsed.raw) : "";
+  const plain = useMemo(() => preparePlainText(note), [note]);
+  const printable =
+    mode === "text"
+      ? plain.kind === "ok"
+        ? plain.text
+        : ""
+      : parsed.kind === "ok"
+        ? pretty
+          ? parsed.pretty
+          : parsed.raw
+        : "";
   const geometry = frameGeometry(shape);
 
   const plan = useMemo(() => {
@@ -295,21 +320,32 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
     setSource(value);
   };
 
-  const readJsonFile = (file: File) => {
-    if (file.size > 100_000) {
-      setFileError("Файл больше 100 КБ. Раздели JSON на части.");
+  const handleNote = (value: string) => {
+    setFileError(null);
+    setNotice(null);
+    setNote(value);
+  };
+
+  const readTextFiles = async (files: File[], target: "json" | "text") => {
+    const oversized = files.find((file) => file.size > 100_000);
+    if (oversized) {
+      setFileError(
+        target === "json"
+          ? "Файл больше 100 КБ. Раздели JSON на части."
+          : "Файл больше 100 КБ. Раздели текст на части.",
+      );
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
+    try {
+      const contents = await Promise.all(files.map((file) => readFileText(file)));
       setFileError(null);
       setNotice(null);
-      setSource(typeof reader.result === "string" ? reader.result : "");
-    };
-    reader.onerror = () => {
-      setFileError("Не удалось прочитать файл.");
-    };
-    reader.readAsText(file);
+      const joined = contents.join("\n\n");
+      if (target === "json") setSource(joined);
+      else setNote(joined);
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : "Не удалось прочитать файл.");
+    }
   };
 
   const loadImages = async (files: File[]) => {
@@ -344,10 +380,12 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
       void loadImages(images);
       return;
     }
-    const first = files[0];
-    if (!first) return;
-    setMode("json");
-    readJsonFile(first);
+    const texts = files.filter((file) => !isImageFile(file));
+    const only = texts[0];
+    if (!only) return;
+    const target = texts.length === 1 && isJsonFile(only) ? "json" : "text";
+    setMode(target);
+    void readTextFiles(texts, target);
   };
 
   const downloadFrame = async (index: number) => {
@@ -417,8 +455,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
           </div>
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground md:text-base">
             Детская камера печатает снимок из своего альбома. Сюда можно
-            вставить JSON или снимок экрана Mac: TIFF в полном разрешении,
-            PNG, JPEG и другие картинки. На ленту уходит чёрно-белый JPEG.
+            вставить JSON, обычный текст или снимок экрана Mac: TIFF в полном
+            разрешении, PNG, JPEG и другие картинки. На ленту уходит чёрно-белый JPEG.
           </p>
         </div>
       </header>
@@ -455,16 +493,34 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
               role="tab"
               aria-selected={mode === "json"}
               variant={mode === "json" ? "default" : "outline"}
-              onClick={() => setMode("json")}
+              onClick={() => {
+                setFileError(null);
+                setMode("json");
+              }}
             >
               JSON
             </Button>
             <Button
               type="button"
               role="tab"
+              aria-selected={mode === "text"}
+              variant={mode === "text" ? "default" : "outline"}
+              onClick={() => {
+                setFileError(null);
+                setMode("text");
+              }}
+            >
+              Текст
+            </Button>
+            <Button
+              type="button"
+              role="tab"
               aria-selected={mode === "image"}
               variant={mode === "image" ? "default" : "outline"}
-              onClick={() => setMode("image")}
+              onClick={() => {
+                setFileError(null);
+                setMode("image");
+              }}
             >
               Картинка
             </Button>
@@ -524,26 +580,46 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             />
             Форматировать с отступами
           </label>
-
+          </>
+          ) : mode === "text" ? (
+          <>
           <div className="space-y-2">
-            <Label htmlFor={sizeId}>Размер букв на снимке: {fontSize}</Label>
-            <input
-              id={sizeId}
-              type="range"
-              min={MIN_FONT}
-              max={MAX_FONT}
-              step={FONT_STEP}
-              value={fontSize}
-              onChange={(event) => setFontSize(Number(event.target.value))}
-              className="w-full accent-black"
-              aria-valuemin={MIN_FONT}
-              aria-valuemax={MAX_FONT}
-              aria-valuenow={fontSize}
-              aria-valuetext={`${fontSize} пикселей`}
+            <Label htmlFor={textId}>Текст</Label>
+            <Textarea
+              id={textId}
+              value={note}
+              onChange={(event) => handleNote(event.target.value)}
+              placeholder="Записка, список или любое сообщение"
+              translate="no"
+              aria-invalid={plain.kind === "error" || Boolean(fileError)}
+              aria-describedby={textErrorId}
+              className="field-sizing-fixed h-80 min-h-64 resize-y text-sm leading-6"
             />
-            <p className="text-sm text-muted-foreground">
-              Крупнее надёжнее читается на термоленте.
+            <p
+              id={textErrorId}
+              role={fileError || plain.kind === "error" ? "alert" : undefined}
+              className="min-h-5 text-sm text-destructive"
+            >
+              {fileError ?? (plain.kind === "error" ? plain.message : "")}
             </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleNote(SAMPLE_TEXT)}
+            >
+              Пример
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => fileRef.current?.click()}
+            >
+              <FileUp aria-hidden="true" />
+              Открыть файл
+            </Button>
           </div>
           </>
           ) : (
@@ -617,7 +693,30 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
           </div>
           )}
 
-          {mode === "json" ? (
+          {mode !== "image" ? (
+          <div className="space-y-2">
+            <Label htmlFor={sizeId}>Размер букв на снимке: {fontSize}</Label>
+            <input
+              id={sizeId}
+              type="range"
+              min={MIN_FONT}
+              max={MAX_FONT}
+              step={FONT_STEP}
+              value={fontSize}
+              onChange={(event) => setFontSize(Number(event.target.value))}
+              className="w-full accent-black"
+              aria-valuemin={MIN_FONT}
+              aria-valuemax={MAX_FONT}
+              aria-valuenow={fontSize}
+              aria-valuetext={`${fontSize} пикселей`}
+            />
+            <p className="text-sm text-muted-foreground">
+              Крупнее надёжнее читается на термоленте.
+            </p>
+          </div>
+          ) : null}
+
+          {mode !== "image" ? (
           <div className="space-y-2">
             <p className="text-sm font-medium" id="shape-label">
               Форма отпечатка
@@ -677,7 +776,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             multiple
             accept={FILE_ACCEPT}
             className="sr-only"
-            aria-label="Открыть JSON или картинку"
+            aria-label="Открыть JSON, текст или картинку"
             onChange={(event) => {
               handleIncomingFiles([...(event.target.files ?? [])]);
               event.target.value = "";
@@ -709,10 +808,10 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                   ? `${pages.length} ${framesWord(pages.length)} · ${plan.maxChars} символов в строке · до ${plan.contentLineBudget} строк на кадр`
                   : "Здесь появится снимок для альбома камеры."}
             </p>
-            {mode === "json" && plan?.truncated ? (
+            {mode !== "image" && plan?.truncated ? (
               <p role="status" className="text-sm text-destructive">
                 На снимок попали первые {MAX_PAGES} кадров. Уменьши шрифт или
-                разрежь JSON.
+                разрежь {mode === "json" ? "JSON" : "текст"}.
               </p>
             ) : null}
             {mode === "image" && preparedImages?.truncated ? (
@@ -726,7 +825,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             <Button
               type="button"
               className="h-10 w-full"
-              disabled={busy || imageBusy || (mode === "json" && fontState !== "ready")}
+              disabled={busy || imageBusy || (mode !== "image" && fontState !== "ready")}
               onClick={() => void handleDownloadAll()}
             >
               <Download aria-hidden="true" />
@@ -749,11 +848,16 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                       : "Перетащи картинку слева. Кадр соберётся здесь."
                   : fontState === "error"
                     ? "Шрифт не загрузился. Обнови страницу."
-                    : parsed.kind === "error"
+                    : mode === "json" && parsed.kind === "error"
                       ? "Исправь JSON, и кадр появится снова."
-                      : fontState === "loading" && source.trim()
-                        ? "Подбираю шрифт для термопечати…"
-                        : "Вставь JSON слева. Кадр соберётся здесь."
+                      : mode === "text" && plain.kind === "error"
+                        ? "Сократи текст, и кадр появится снова."
+                        : fontState === "loading" &&
+                            (mode === "text" ? note : source).trim()
+                          ? "Подбираю шрифт для термопечати…"
+                          : mode === "text"
+                            ? "Напиши текст слева. Кадр соберётся здесь."
+                            : "Вставь JSON слева. Кадр соберётся здесь."
               }
             />
           ) : (
