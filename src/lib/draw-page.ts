@@ -1,4 +1,9 @@
-import type { PagePlan } from "@/lib/plan-pages";
+import {
+  COLUMN_MAX_WIDTH,
+  FRAME_WIDTH,
+  printSheetPlacement,
+  type PagePlan,
+} from "@/lib/plan-pages";
 
 export type TextTurn = 0 | 90 | -90;
 
@@ -14,6 +19,27 @@ export type PreviewFrame =
   | { kind: "image"; width: number; height: number; data: Uint8ClampedArray };
 
 const INK_CUTOFF = 188;
+
+const mountOnPrintSheet = (
+  context: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+): void => {
+  if (canvas.width === COLUMN_MAX_WIDTH && canvas.height === FRAME_WIDTH) return;
+  const snapshot = document.createElement("canvas");
+  snapshot.width = canvas.width;
+  snapshot.height = canvas.height;
+  const snap = snapshot.getContext("2d");
+  if (!snap) return;
+  snap.drawImage(canvas, 0, 0);
+  const place = printSheetPlacement(snapshot.width, snapshot.height);
+  canvas.width = COLUMN_MAX_WIDTH;
+  canvas.height = FRAME_WIDTH;
+  context.imageSmoothingEnabled = false;
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, COLUMN_MAX_WIDTH, FRAME_WIDTH);
+  context.drawImage(snapshot, place.dx, place.dy, place.dw, place.dh);
+  flattenInk(context, COLUMN_MAX_WIDTH, FRAME_WIDTH);
+};
 
 const flattenInk = (
   context: CanvasRenderingContext2D,
@@ -70,6 +96,7 @@ export const drawPage = (
   });
   context.restore();
   flattenInk(context, outputWidth, outputHeight);
+  mountOnPrintSheet(context, canvas);
 };
 
 export const drawColumn = (
@@ -117,6 +144,7 @@ export const paintImage = (
   canvas.height = page.height;
   const copy = new Uint8ClampedArray(page.data);
   context.putImageData(new ImageData(copy, page.width, page.height), 0, 0);
+  mountOnPrintSheet(context, canvas);
 };
 
 export const canvasToJpeg = (canvas: HTMLCanvasElement): Promise<Blob> =>

@@ -6,6 +6,7 @@ import {
   COLUMN_MAX_WIDTH,
   planColumn,
   planPages,
+  printSheetPlacement,
   wrapLine,
   type PlanOptions,
 } from "./plan-pages.ts";
@@ -142,6 +143,21 @@ test("planColumn keeps each scroll file within 2000×960", () => {
     plan.pages.reduce((sum, page) => sum + page.lines.length, 0),
     50,
   );
+});
+
+test("printSheetPlacement fits a portrait frame onto the wide sheet", () => {
+  assert.deepEqual(printSheetPlacement(960, 1280), {
+    dx: 2000 - 720,
+    dy: 0,
+    dw: 720,
+    dh: 960,
+  });
+  assert.deepEqual(printSheetPlacement(960, 960), {
+    dx: 2000 - 960,
+    dy: 0,
+    dw: 960,
+    dh: 960,
+  });
 });
 
 test("planPages ignores blank input", () => {

@@ -37,6 +37,7 @@ import { photoFileName } from "@/lib/photo-name";
 import { preparePlainText } from "@/lib/plain-text";
 import {
   COLUMN_MAX_WIDTH,
+  FRAME_WIDTH,
   frameGeometry,
   MAX_PAGES,
   MAX_SCROLL_PAGES,
@@ -59,12 +60,12 @@ const SHAPES: { id: FrameShape; label: string; hint: string }[] = [
   {
     id: "frame",
     label: "Кадр 3:4",
-    hint: "Обычное фото. Длинный текст продолжится на следующем кадре.",
+    hint: "Обычное фото на листе 2000×960. Другой размер камера печатает белым.",
   },
   {
     id: "square",
     label: "Квадрат",
-    hint: "Короче кадра, если отпечаток у камеры почти квадратный.",
+    hint: "Квадратный блок на том же листе 2000×960, который камера печатает.",
   },
   {
     id: "strip",
@@ -264,15 +265,15 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
     if (mode === "image") {
       return (preparedImages?.pages ?? []).map((page) => ({
         kind: "image" as const,
-        width: page.width,
-        height: page.height,
+        width: COLUMN_MAX_WIDTH,
+        height: FRAME_WIDTH,
         data: page.data,
       }));
     }
     return pages.map((page) => ({
       kind: "text" as const,
-      width: page.width,
-      height: page.height,
+      width: alongTape ? page.width : COLUMN_MAX_WIDTH,
+      height: alongTape ? page.height : FRAME_WIDTH,
       page,
       turn: alongTape ? textTurn : 0,
       column: alongTape,

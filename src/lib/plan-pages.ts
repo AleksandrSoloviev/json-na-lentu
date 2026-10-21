@@ -11,6 +11,21 @@ export const WIDTH_FUDGE = 4;
 
 export type FrameShape = "frame" | "square" | "strip";
 
+export const printSheetPlacement = (
+  sourceWidth: number,
+  sourceHeight: number,
+): { dx: number; dy: number; dw: number; dh: number } => {
+  const scale = Math.min(COLUMN_MAX_WIDTH / sourceWidth, FRAME_WIDTH / sourceHeight);
+  const dw = Math.max(1, Math.round(sourceWidth * scale));
+  const dh = Math.max(1, Math.round(sourceHeight * scale));
+  return {
+    dx: COLUMN_MAX_WIDTH - dw,
+    dy: Math.round((FRAME_WIDTH - dh) / 2),
+    dw,
+    dh,
+  };
+};
+
 export const frameGeometry = (
   shape: FrameShape,
 ): { width: number; height: number } => {
