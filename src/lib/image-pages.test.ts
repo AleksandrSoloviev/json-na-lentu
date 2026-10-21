@@ -6,7 +6,6 @@ import { decodeTiffBuffer } from "./decode-raster.ts";
 import {
   inkPhoto,
   meanLuminance,
-  planImageSlots,
   prepareImagePages,
   sampleSlot,
   type Raster,
@@ -21,24 +20,6 @@ const raster = (width: number, height: number, pixels: number[]): Raster => ({
   width,
   height,
   data: Uint8ClampedArray.from(pixels),
-});
-
-test("every picture is letterboxed into one camera photo", () => {
-  const wide = planImageSlots(4032, 3024).slots[0];
-  assert.equal(wide?.width, 8064);
-  assert.equal(wide?.height, 6144);
-  assert.equal(wide?.dw, 8064);
-  assert.equal(wide?.dh, 6048);
-  assert.equal(wide?.dx, 0);
-  assert.equal(wide?.dy, 48);
-
-  const tall = planImageSlots(4, 12).slots[0];
-  assert.equal(tall?.width, 8064);
-  assert.equal(tall?.height, 6144);
-  assert.equal(tall?.dw, 2048);
-  assert.equal(tall?.dh, 6144);
-  assert.equal(tall?.dx, 3008);
-  assert.equal(tall?.dy, 0);
 });
 
 test("sampling averages a black and white pair into the print pixel", () => {

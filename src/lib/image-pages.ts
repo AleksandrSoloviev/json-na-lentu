@@ -1,5 +1,3 @@
-import { PHOTO_HEIGHT, PHOTO_WIDTH } from "./plan-pages.ts";
-
 export const MAX_RASTER_PIXELS = 64_000_000;
 export const MAX_IMAGE_BYTES = 80 * 1024 * 1024;
 const SCREEN_CUTOFF = 168;
@@ -30,10 +28,6 @@ export type ImagePage = {
   sourceWidth: number;
   sourceHeight: number;
   data: Uint8ClampedArray;
-  dx: number;
-  dy: number;
-  dw: number;
-  dh: number;
 };
 
 const clamp = (value: number, min: number, max: number): number =>
@@ -55,40 +49,6 @@ const composite = (
 
 const luminance = (red: number, green: number, blue: number): number =>
   red * 0.299 + green * 0.587 + blue * 0.114;
-
-const containSlot = (
-  srcWidth: number,
-  srcHeight: number,
-  pageWidth: number,
-  pageHeight: number,
-): ImageSlot => {
-  const scale = Math.min(pageWidth / srcWidth, pageHeight / srcHeight);
-  const dw = Math.max(1, Math.round(srcWidth * scale));
-  const dh = Math.max(1, Math.round(srcHeight * scale));
-  return {
-    width: pageWidth,
-    height: pageHeight,
-    sx: 0,
-    sy: 0,
-    sw: srcWidth,
-    sh: srcHeight,
-    dx: Math.floor((pageWidth - dw) / 2),
-    dy: Math.floor((pageHeight - dh) / 2),
-    dw,
-    dh,
-  };
-};
-
-export const planImageSlots = (
-  srcWidth: number,
-  srcHeight: number,
-): { slots: ImageSlot[]; truncated: boolean } => {
-  if (srcWidth < 1 || srcHeight < 1) return { slots: [], truncated: false };
-  return {
-    slots: [containSlot(srcWidth, srcHeight, PHOTO_WIDTH, PHOTO_HEIGHT)],
-    truncated: false,
-  };
-};
 
 export const sampleSlot = (
   raster: Raster,
@@ -246,9 +206,9 @@ export const prepareImagePages = (
   raster: Raster,
   options: { ink: ImageInk },
 ): { pages: ImagePage[]; truncated: boolean; inverted: boolean } => {
-  const planned = planImageSlots(raster.width, raster.height);
-  const slot = planned.slots[0];
-  if (!slot) return { pages: [], truncated: false, inverted: false };
+  if (raster.width < 1 || raster.height < 1) {
+    return { pages: [], truncated: false, inverted: false };
+  }
 
   const data = compositeOnPaper(raster);
   const inverted =
@@ -269,10 +229,6 @@ export const prepareImagePages = (
         sourceWidth: raster.width,
         sourceHeight: raster.height,
         data,
-        dx: slot.dx,
-        dy: slot.dy,
-        dw: slot.dw,
-        dh: slot.dh,
       },
     ],
     truncated: false,

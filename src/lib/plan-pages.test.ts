@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { parseJsonText } from "./json-text.ts";
-import { PHOTO_HEIGHT, PHOTO_WIDTH, planPages, wrapLine, type PlanOptions } from "./plan-pages.ts";
+import {
+  planPages,
+  planSheet,
+  SHEET_HEIGHT,
+  SHEET_WIDTH,
+  textBlockDepth,
+  wrapLine,
+  type PlanOptions,
+} from "./plan-pages.ts";
 
 const baseOptions = (overrides: Partial<PlanOptions> = {}): PlanOptions => ({
   width: 100,
@@ -100,22 +108,21 @@ test("planPages keeps a short scroll on a normal photo", () => {
   assert.equal(plan.pages[0]?.height, 80);
 });
 
-test("planPages lays text on a camera photo", () => {
-  const plan = planPages("раз\nдва", {
-    width: PHOTO_WIDTH,
-    height: PHOTO_HEIGHT,
-    fontSize: 400,
+test("planSheet keeps every page at the size the camera prints", () => {
+  const plan = planSheet("раз\nдва", {
+    fontSize: 56,
     lineHeight: 1.35,
-    charWidth: 240,
-    padding: 360,
-    maxPages: 8,
-    header: false,
+    charWidth: 34,
+    padding: 56,
+    maxPages: 12,
   });
   assert.equal(plan.pages.length, 1);
-  assert.equal(plan.pages[0]?.width, 8064);
-  assert.equal(plan.pages[0]?.height, 6144);
+  assert.equal(plan.pages[0]?.width, SHEET_WIDTH);
+  assert.equal(plan.pages[0]?.height, SHEET_HEIGHT);
+  assert.equal(SHEET_WIDTH, 2000);
+  assert.equal(SHEET_HEIGHT, 960);
   assert.deepEqual(plan.pages[0]?.lines, ["раз", "два"]);
-  assert.equal(PHOTO_WIDTH / PHOTO_HEIGHT, 21 / 16);
+  assert.equal(textBlockDepth(2000, 56, 76, 2), 56 * 2 + 76 * 2);
 });
 
 test("planPages ignores blank input", () => {

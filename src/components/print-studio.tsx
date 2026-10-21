@@ -30,19 +30,17 @@ import { photoFileName } from "@/lib/photo-name";
 import { preparePlainText } from "@/lib/plain-text";
 import {
   MAX_PAGES,
-  PHOTO_HEIGHT,
-  PHOTO_WIDTH,
-  planPages,
+  planSheet,
   PRINT_LINE_HEIGHT,
   PRINT_PADDING,
+  SHEET_HEIGHT,
+  SHEET_WIDTH,
 } from "@/lib/plan-pages";
 import { SAMPLE_JSON } from "@/lib/sample-json";
 import { SAMPLE_TEXT } from "@/lib/sample-text";
 import { cn } from "cn";
 
 const PHOTO_START_KEY = "lenta-photo-start";
-const PREVIEW_SCALE = 1 / 8;
-const FULLSCREEN_SCALE = 1 / 4;
 
 const readPhotoStart = (): number => {
   try {
@@ -84,10 +82,10 @@ const setStoredPhotoStart = (value: number): void => {
   photoStartListeners.forEach((listener) => listener());
 };
 
-const MIN_FONT = 240;
-const MAX_FONT = 560;
-const FONT_STEP = 40;
-const DEFAULT_FONT = 400;
+const MIN_FONT = 44;
+const MAX_FONT = 76;
+const FONT_STEP = 4;
+const DEFAULT_FONT = 56;
 
 const IMAGE_INKS: { id: ImageInk; label: string; hint: string }[] = [
   {
@@ -108,7 +106,7 @@ const FILE_ACCEPT =
 type StudioMode = "json" | "text" | "image";
 
 const STEPS = [
-  "Скачай PHO00000.JPG. Это тот же кадр, что снимает камера: 8064×6144. Браузер спросит папку, имя файла не меняй.",
+  "Скачай PHO00000.JPG. Лист 2000×960: этот размер камера уже печатала. Браузер спросит папку, имя файла не меняй.",
   "Вставь карту памяти и подключи камеру к Mac. Без карты она часто видна только как веб-камера, и диска нет.",
   "Скопируй файл на карту. У VTech KidiZoom это папка DOWNLOAD/PHOTO на диске VTech 5491. На остальных камерах положи JPEG в DCIM.",
   "Извлеки камеру, открой снимок в альбоме и нажми кнопку печати на корпусе.",
@@ -257,17 +255,14 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
         : "";
   const plan = useMemo(() => {
     if (!charWidth || !printable) return null;
-    return planPages(printable, {
-      width: PHOTO_WIDTH,
-      height: PHOTO_HEIGHT,
+    return planSheet(printable, {
       fontSize,
       lineHeight: PRINT_LINE_HEIGHT,
       charWidth,
       padding: PRINT_PADDING,
       maxPages: MAX_PAGES,
-      header: mode !== "text",
     });
-  }, [charWidth, fontSize, mode, printable]);
+  }, [charWidth, fontSize, printable]);
 
   const pages = useMemo(() => plan?.pages ?? [], [plan]);
   const preparedImages = useMemo(() => {
@@ -295,21 +290,17 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
     if (mode === "image") {
       return (preparedImages?.pages ?? []).map((page) => ({
         kind: "image" as const,
-        width: PHOTO_WIDTH,
-        height: PHOTO_HEIGHT,
+        width: SHEET_WIDTH,
+        height: SHEET_HEIGHT,
         sourceWidth: page.sourceWidth,
         sourceHeight: page.sourceHeight,
         data: page.data,
-        dx: page.dx,
-        dy: page.dy,
-        dw: page.dw,
-        dh: page.dh,
       }));
     }
     return pages.map((page) => ({
       kind: "text" as const,
-      width: PHOTO_WIDTH,
-      height: PHOTO_HEIGHT,
+      width: SHEET_WIDTH,
+      height: SHEET_HEIGHT,
       page,
     }));
   }, [mode, pages, preparedImages]);
@@ -354,7 +345,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
       const canvas = canvasRefs.current[index];
       if (!canvas) return;
       if (frame.kind === "text" && fontState !== "ready") return;
-      renderFrame(canvas, frame, `"${printFont}"`, PREVIEW_SCALE);
+      renderFrame(canvas, frame, `"${printFont}"`);
     });
   }, [fontState, previewFrames, printFont]);
 
@@ -434,7 +425,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
 
   const blobForFrame = async (frame: PreviewFrame): Promise<Blob> => {
     const canvas = document.createElement("canvas");
-    renderFrame(canvas, frame, `"${printFont}"`, 1);
+    renderFrame(canvas, frame, `"${printFont}"`);
     return canvasToJpeg(canvas);
   };
 
@@ -541,9 +532,10 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             </h1>
           </div>
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground md:text-base">
-            Детская камера печатает снимок из своего альбома. JSON, текст и
-            картинка собираются в такой же кадр, какой камера снимает сама:
-            8064×6144, текст прямо. На ленту уходит чёрно-белый JPEG.
+            Камера печатает лист 2000×960. Свой огромный снимок она показывает,
+            а чужой файл того же размера открывает чёрным и в печать не берёт.
+            JSON, текст и картинка собираются в лист, который она уже печатала:
+            строка идёт вдоль ленты, текст у края, который выходит первым.
           </p>
         </div>
       </header>
@@ -754,7 +746,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
               <p className="text-sm text-muted-foreground">{imageInkHint}</p>
             </div>
             <p className="text-sm text-muted-foreground">
-              Картинка вписывается в кадр камеры {PHOTO_WIDTH}×{PHOTO_HEIGHT}, пропорции
+              Картинка ложится на тот же лист {SHEET_WIDTH}×{SHEET_HEIGHT}, пропорции
               сохраняются.
             </p>
           </div>
@@ -778,8 +770,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
               aria-valuetext={`${fontSize} пикселей`}
             />
             <p className="text-sm text-muted-foreground">
-              Крупнее надёжнее читается на термоленте. Файл всегда {PHOTO_WIDTH}×
-              {PHOTO_HEIGHT}, как снимок самой камеры. Текст лежит прямо.
+              Крупнее надёжнее читается на термоленте. Файл всегда {SHEET_WIDTH}×
+              {SHEET_HEIGHT}. Буквы повёрнуты, чтобы строка шла вдоль ленты.
             </p>
           </div>
           ) : null}
@@ -819,7 +811,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                   ? `${previewFrames.length} ${framesWord(previewFrames.length)}${imageName ? ` · ${imageName}` : ""}${preparedImages.inverted ? " · тёмный фон стал белым" : ""}`
                   : "Перетащи снимок экрана: TIFF, PNG, JPEG и другие."
                 : plan && pages.length > 0
-                  ? `${pages.length} ${framesWord(pages.length)} · ${PHOTO_WIDTH}×${PHOTO_HEIGHT} · ${plan.maxChars} символов в строке · до ${plan.contentLineBudget} строк на кадр`
+                  ? `${pages.length} ${framesWord(pages.length)} · ${SHEET_WIDTH}×${SHEET_HEIGHT} · ${plan.maxChars} символов в строке · до ${plan.contentLineBudget} строк на кадр`
                   : "Здесь появится снимок для альбома камеры."}
             </p>
             {mode !== "image" && plan?.truncated ? (
@@ -830,8 +822,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             ) : null}
             {previewFrames[0] ? (
               <p role="status" className="text-sm text-muted-foreground">
-                Каждый файл — {PHOTO_WIDTH}×{PHOTO_HEIGHT}, в том же виде JPEG, в каком
-                камера пишет свои снимки.
+                Каждый файл — {SHEET_WIDTH}×{SHEET_HEIGHT}. Камера печатает этот лист.
+                Текст стоит у края, который выходит первым.
               </p>
             ) : null}
             {mode !== "image" && pages.length > 1 ? (
@@ -975,7 +967,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
 };
 
 const EmptySheet = ({ message }: { message: string }) => (
-  <div className="flex aspect-[21/16] items-center justify-center border border-black bg-white p-6 text-center shadow-[6px_6px_0_0_#1c1915]">
+  <div className="flex aspect-[25/12] items-center justify-center border border-black bg-white p-6 text-center shadow-[6px_6px_0_0_#1c1915]">
     <p className="max-w-48 text-sm leading-6 text-neutral-600">{message}</p>
   </div>
 );
@@ -1009,7 +1001,7 @@ const FullscreenFrame = ({
     const canvas = canvasRef.current;
     if (!canvas) return;
     if (frame.kind === "text" && !fontReady) return;
-    renderFrame(canvas, frame, monoFamily, FULLSCREEN_SCALE);
+    renderFrame(canvas, frame, monoFamily);
   }, [fontReady, monoFamily, frame]);
 
   useEffect(() => {

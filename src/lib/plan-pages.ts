@@ -1,9 +1,34 @@
-export const PHOTO_WIDTH = 8064;
-export const PHOTO_HEIGHT = 6144;
-export const PRINT_PADDING = 360;
+export const SHEET_WIDTH = 2000;
+export const SHEET_HEIGHT = 960;
+export const PRINT_PADDING = 56;
 export const PRINT_LINE_HEIGHT = 1.35;
-export const MAX_PAGES = 8;
+export const MAX_PAGES = 12;
 export const WIDTH_FUDGE = 4;
+
+export const textBlockDepth = (
+  sheetWidth: number,
+  padding: number,
+  linePx: number,
+  lineCount: number,
+): number => {
+  if (lineCount < 1 || linePx < 1) return sheetWidth;
+  return Math.min(sheetWidth, Math.max(1, padding * 2 + lineCount * linePx));
+};
+
+export const printSheetPlacement = (
+  sourceWidth: number,
+  sourceHeight: number,
+): { dx: number; dy: number; dw: number; dh: number } => {
+  const scale = Math.min(1, SHEET_WIDTH / sourceWidth, SHEET_HEIGHT / sourceHeight);
+  const dw = Math.max(1, Math.round(sourceWidth * scale));
+  const dh = Math.max(1, Math.round(sourceHeight * scale));
+  return {
+    dx: 0,
+    dy: Math.round((SHEET_HEIGHT - dh) / 2),
+    dw,
+    dh,
+  };
+};
 
 export type PlanOptions = {
   width: number;
@@ -101,6 +126,44 @@ const chunkLines = (lines: string[], size: number): string[][] => {
     chunks.push(lines.slice(index, index + size));
   }
   return chunks;
+};
+
+export type SheetOptions = {
+  fontSize: number;
+  lineHeight: number;
+  charWidth: number;
+  padding: number;
+  maxPages: number;
+};
+
+export const planSheet = (text: string, options: SheetOptions): PlanResult => {
+  const linePx = Math.ceil(options.fontSize * options.lineHeight);
+  const usable = SHEET_HEIGHT - options.padding * 2 - WIDTH_FUDGE;
+  const maxChars = Math.max(1, Math.floor(usable / options.charWidth));
+  const maxLines = Math.max(1, Math.floor((SHEET_WIDTH - options.padding * 2) / linePx));
+
+  if (text.trim() === "") {
+    return { pages: [], truncated: false, maxChars, contentLineBudget: maxLines };
+  }
+
+  const wrapped = wrapText(text, maxChars);
+  const chunks = chunkLines(wrapped, maxLines);
+  const limited = chunks.slice(0, Math.max(1, options.maxPages));
+  const pages = limited.map((lines) => ({
+    width: SHEET_WIDTH,
+    height: SHEET_HEIGHT,
+    padding: options.padding,
+    fontSize: options.fontSize,
+    linePx,
+    lines,
+  }));
+
+  return {
+    pages,
+    truncated: chunks.length > limited.length,
+    maxChars,
+    contentLineBudget: maxLines,
+  };
 };
 
 export const planPages = (text: string, options: PlanOptions): PlanResult => {

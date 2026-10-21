@@ -1,5 +1,10 @@
-import { encodeCameraJpeg } from "@/lib/camera-jpeg";
-import { PHOTO_HEIGHT, PHOTO_WIDTH, type PagePlan } from "@/lib/plan-pages";
+import {
+  printSheetPlacement,
+  SHEET_HEIGHT,
+  SHEET_WIDTH,
+  textBlockDepth,
+  type PagePlan,
+} from "@/lib/plan-pages";
 
 export type PreviewFrame =
   | {
@@ -15,18 +20,9 @@ export type PreviewFrame =
       sourceWidth: number;
       sourceHeight: number;
       data: Uint8ClampedArray;
-      dx: number;
-      dy: number;
-      dw: number;
-      dh: number;
     };
 
 const INK_CUTOFF = 188;
-
-const scaledSize = (scale: number): { width: number; height: number } => ({
-  width: Math.max(1, Math.round(PHOTO_WIDTH * scale)),
-  height: Math.max(1, Math.round(PHOTO_HEIGHT * scale)),
-});
 
 const flattenInk = (
   context: CanvasRenderingContext2D,
@@ -53,29 +49,48 @@ export const drawPage = (
   canvas: HTMLCanvasElement,
   page: PagePlan,
   fontFamily: string,
-  scale = 1,
 ): void => {
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) return;
 
-  const { width, height } = scaledSize(scale);
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = SHEET_WIDTH;
+  canvas.height = SHEET_HEIGHT;
   context.imageSmoothingEnabled = false;
   context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, width, height);
+  context.fillRect(0, 0, SHEET_WIDTH, SHEET_HEIGHT);
+  context.save();
+  context.translate(textBlockDepth(SHEET_WIDTH, page.padding, page.linePx, page.lines.length), 0);
+  context.rotate(Math.PI / 2);
   context.fillStyle = "#000000";
-  context.font = `700 ${page.fontSize * scale}px ${fontFamily}`;
+  context.font = `700 ${page.fontSize}px ${fontFamily}`;
   context.textBaseline = "top";
   context.textAlign = "left";
   page.lines.forEach((line, index) => {
-    context.fillText(
-      line,
-      page.padding * scale,
-      (page.padding + index * page.linePx) * scale,
-    );
+    context.fillText(line, page.padding, page.padding + index * page.linePx);
   });
-  flattenInk(context, width, height);
+  context.restore();
+  flattenInk(context, SHEET_WIDTH, SHEET_HEIGHT);
+};
+
+const turnOntoSheet = (
+  source: CanvasImageSource,
+  sourceWidth: number,
+  sourceHeight: number,
+): HTMLCanvasElement => {
+  const turned = document.createElement("canvas");
+  turned.width = sourceHeight;
+  turned.height = sourceWidth;
+  const turnedContext = turned.getContext("2d");
+  if (!turnedContext) return turned;
+  turnedContext.imageSmoothingEnabled = false;
+  turnedContext.fillStyle = "#ffffff";
+  turnedContext.fillRect(0, 0, turned.width, turned.height);
+  turnedContext.save();
+  turnedContext.translate(turned.width, 0);
+  turnedContext.rotate(Math.PI / 2);
+  turnedContext.drawImage(source, 0, 0, sourceWidth, sourceHeight);
+  turnedContext.restore();
+  return turned;
 };
 
 export const paintImage = (
@@ -84,22 +99,10 @@ export const paintImage = (
     sourceWidth: number;
     sourceHeight: number;
     data: Uint8ClampedArray;
-    dx: number;
-    dy: number;
-    dw: number;
-    dh: number;
   },
-  scale = 1,
 ): void => {
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) return;
-  const { width, height } = scaledSize(scale);
-  canvas.width = width;
-  canvas.height = height;
-  context.imageSmoothingEnabled = false;
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, width, height);
-
   const source = document.createElement("canvas");
   source.width = page.sourceWidth;
   source.height = page.sourceHeight;
@@ -107,34 +110,40 @@ export const paintImage = (
   if (!sourceContext) return;
   const copy = new Uint8ClampedArray(page.data);
   sourceContext.putImageData(new ImageData(copy, page.sourceWidth, page.sourceHeight), 0, 0);
-  context.drawImage(
-    source,
-    Math.round(page.dx * scale),
-    Math.round(page.dy * scale),
-    Math.max(1, Math.round(page.dw * scale)),
-    Math.max(1, Math.round(page.dh * scale)),
-  );
+  const turned = turnOntoSheet(source, page.sourceWidth, page.sourceHeight);
+  const place = printSheetPlacement(turned.width, turned.height);
+  canvas.width = SHEET_WIDTH;
+  canvas.height = SHEET_HEIGHT;
+  context.imageSmoothingEnabled = false;
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, SHEET_WIDTH, SHEET_HEIGHT);
+  context.drawImage(turned, place.dx, place.dy, place.dw, place.dh);
+  flattenInk(context, SHEET_WIDTH, SHEET_HEIGHT);
 };
 
 export const renderFrame = (
   canvas: HTMLCanvasElement,
   frame: PreviewFrame,
   fontFamily: string,
-  scale = 1,
 ): void => {
   if (frame.kind === "image") {
-    paintImage(canvas, frame, scale);
+    paintImage(canvas, frame);
     return;
   }
-  drawPage(canvas, frame.page, fontFamily, scale);
+  drawPage(canvas, frame.page, fontFamily);
 };
 
-export const canvasToJpeg = (canvas: HTMLCanvasElement): Promise<Blob> => {
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) return Promise.reject(new Error("Не удалось собрать JPEG"));
-  const image = context.getImageData(0, 0, canvas.width, canvas.height);
-  const bytes = encodeCameraJpeg(image.data, canvas.width, canvas.height);
-  const copy = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(copy).set(bytes);
-  return Promise.resolve(new Blob([copy], { type: "image/jpeg" }));
-};
+export const canvasToJpeg = (canvas: HTMLCanvasElement): Promise<Blob> =>
+  new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("Не удалось собрать JPEG"));
+          return;
+        }
+        resolve(blob);
+      },
+      "image/jpeg",
+      0.95,
+    );
+  });

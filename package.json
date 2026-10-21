@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test src/lib/plan-pages.test.ts src/lib/image-pages.test.ts src/lib/plain-text.test.ts src/lib/photo-name.test.ts src/lib/camera-jpeg.test.ts"
+    "test": "node --experimental-strip-types --test src/lib/plan-pages.test.ts src/lib/image-pages.test.ts src/lib/plain-text.test.ts src/lib/photo-name.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
@@ -29,7 +29,6 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.2",
-    "jpeg-js": "^0.4.4",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
