@@ -120,7 +120,7 @@ const FILE_ACCEPT =
 type StudioMode = "json" | "text" | "image";
 
 const STEPS = [
-  "Скачай файл PHO00000.JPG. Камера принимает только такое имя.",
+  "Скачай PHO00000.JPG. Браузер спросит папку: можно сразу выбрать карту камеры. Имя файла не меняй.",
   "Вставь карту памяти и подключи камеру к Mac. Без карты она часто видна только как веб-камера, и диска нет.",
   "Скопируй файл на карту. У VTech KidiZoom это папка DOWNLOAD/PHOTO на диске VTech 5491. На остальных камерах положи JPEG в DCIM.",
   "Извлеки камеру, открой снимок в альбоме и нажми кнопку печати на корпусе.",
@@ -166,6 +166,58 @@ const downloadBlob = (blob: Blob, filename: string): void => {
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+};
+
+const JPEG_PICKER_TYPE = {
+  description: "Снимок камеры",
+  accept: { "image/jpeg": [".JPG", ".jpg"] },
+};
+
+const isAbort = (error: unknown): boolean =>
+  error instanceof DOMException && error.name === "AbortError";
+
+const writeBlob = async (handle: FileSystemFileHandle, blob: Blob): Promise<void> => {
+  const writable = await handle.createWritable();
+  await writable.write(blob);
+  await writable.close();
+};
+
+type SavePickerWindow = Window & {
+  showSaveFilePicker?: (options: {
+    suggestedName?: string;
+    types?: Array<{ description?: string; accept: Record<string, string[]> }>;
+  }) => Promise<FileSystemFileHandle>;
+  showDirectoryPicker?: (options?: {
+    mode?: "read" | "readwrite";
+    id?: string;
+  }) => Promise<FileSystemDirectoryHandle>;
+};
+
+const pickJpegFile = async (
+  filename: string,
+): Promise<FileSystemFileHandle | "fallback" | "cancelled"> => {
+  const picker = (window as SavePickerWindow).showSaveFilePicker;
+  if (typeof picker !== "function") return "fallback";
+  try {
+    return await picker({
+      suggestedName: filename,
+      types: [JPEG_PICKER_TYPE],
+    });
+  } catch (error) {
+    if (isAbort(error)) return "cancelled";
+    return "fallback";
+  }
+};
+
+const pickFolder = async (): Promise<FileSystemDirectoryHandle | "fallback" | "cancelled"> => {
+  const picker = (window as SavePickerWindow).showDirectoryPicker;
+  if (typeof picker !== "function") return "fallback";
+  try {
+    return await picker({ mode: "readwrite", id: "camera-card" });
+  } catch (error) {
+    if (isAbort(error)) return "cancelled";
+    return "fallback";
+  }
 };
 
 export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
@@ -426,14 +478,26 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
       setNotice("Кадр ещё не собран. Подожди секунду и повтори.");
       return;
     }
+    const filename = photoFileName(photoStart + index);
     setBusy(true);
     setNotice(null);
     try {
+      const picked = await pickJpegFile(filename);
+      if (picked === "cancelled") {
+        setNotice("Сохранение отменено.");
+        return;
+      }
       const blob = await canvasToJpeg(canvas);
-      const filename = photoFileName(photoStart + index);
-      downloadBlob(blob, filename);
+      if (picked === "fallback") {
+        downloadBlob(blob, filename);
+        setNotice(
+          `${filename} уходит в папку «Загрузки»: этот браузер не открывает окно выбора.`,
+        );
+      } else {
+        await writeBlob(picked, blob);
+        setNotice(`Сохранён ${filename}`);
+      }
       setPhotoStart((current) => Math.min(99999, current + index + 1));
-      setNotice(`Браузер сохраняет ${filename}`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Не удалось скачать кадр");
     } finally {
@@ -448,9 +512,29 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
       return;
     }
 
+    const first = photoFileName(photoStart);
+    const last = photoFileName(photoStart + previewFrames.length - 1);
     setBusy(true);
     setNotice(null);
     try {
+      const folder = await pickFolder();
+      if (folder === "cancelled") {
+        setNotice("Сохранение отменено.");
+        return;
+      }
+      if (folder !== "fallback") {
+        for (let index = 0; index < previewFrames.length; index += 1) {
+          const canvas = canvasRefs.current[index];
+          if (!canvas) throw new Error("Кадр ещё не собран. Подожди секунду и повтори.");
+          const name = photoFileName(photoStart + index);
+          const handle = await folder.getFileHandle(name, { create: true });
+          await writeBlob(handle, await canvasToJpeg(canvas));
+        }
+        setPhotoStart((current) => Math.min(99999, current + previewFrames.length));
+        setNotice(`В выбранной папке лежат ${first}–${last}.`);
+        return;
+      }
+
       const entries: Record<string, Uint8Array> = {};
       for (let index = 0; index < previewFrames.length; index += 1) {
         const canvas = canvasRefs.current[index];
@@ -459,11 +543,12 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
         entries[photoFileName(photoStart + index)] = new Uint8Array(await blob.arrayBuffer());
       }
       const zipped = zipSync(entries, { level: 0 });
-      const first = photoFileName(photoStart);
-      const last = photoFileName(photoStart + previewFrames.length - 1);
-      downloadBlob(new Blob([Uint8Array.from(zipped)]), `${first.replace(/\.JPG$/, "")}.zip`);
+      const zipName = `${first.replace(/\.JPG$/, "")}.zip`;
+      downloadBlob(new Blob([Uint8Array.from(zipped)]), zipName);
       setPhotoStart((current) => Math.min(99999, current + previewFrames.length));
-      setNotice(`В архиве ${first}–${last}. На карту копируй сами JPG, не архив.`);
+      setNotice(
+        `${zipName} уходит в «Загрузки». На карту копируй сами JPG, не архив.`,
+      );
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Не удалось скачать кадры");
     } finally {
