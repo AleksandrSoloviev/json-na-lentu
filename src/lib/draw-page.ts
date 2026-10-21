@@ -3,6 +3,7 @@ import {
   COLUMN_MAX_WIDTH,
   FRAME_WIDTH,
   printSheetPlacement,
+  textBlockDepth,
   type PagePlan,
 } from "@/lib/plan-pages";
 
@@ -73,7 +74,10 @@ const paintRotatedText = (
   context.fillRect(0, 0, outputWidth, outputHeight);
   context.save();
   if (turn === 90) {
-    context.translate(outputWidth, 0);
+    context.translate(
+      textBlockDepth(outputWidth, page.padding, page.linePx, page.lines.length),
+      0,
+    );
     context.rotate(Math.PI / 2);
   } else {
     context.translate(0, outputHeight);

@@ -27,11 +27,21 @@ export const printSheetPlacement = (
   const dw = Math.max(1, Math.round(sourceWidth * scale));
   const dh = Math.max(1, Math.round(sourceHeight * scale));
   return {
-    dx: width - dw,
+    dx: 0,
     dy: Math.round((FRAME_WIDTH - dh) / 2),
     dw,
     dh,
   };
+};
+
+export const textBlockDepth = (
+  sheetWidth: number,
+  padding: number,
+  linePx: number,
+  lineCount: number,
+): number => {
+  if (lineCount < 1 || linePx < 1) return sheetWidth;
+  return Math.min(sheetWidth, Math.max(1, padding * 2 + lineCount * linePx));
 };
 
 export const frameGeometry = (

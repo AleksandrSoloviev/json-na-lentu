@@ -7,6 +7,7 @@ import {
   planColumn,
   planPages,
   printSheetPlacement,
+  textBlockDepth,
   clampSheetWidth,
   wrapLine,
   type PlanOptions,
@@ -198,21 +199,26 @@ test("clampSheetWidth stays between 980 and 2000", () => {
   assert.equal(clampSheetWidth(9000), 2000);
 });
 
-test("printSheetPlacement keeps a fitting bitmap at full size on the right", () => {
+test("textBlockDepth packs a short column against the leading edge", () => {
+  assert.equal(textBlockDepth(980, 56, 76, 2), 56 * 2 + 76 * 2);
+  assert.equal(textBlockDepth(980, 56, 76, 40), 980);
+});
+
+test("printSheetPlacement keeps a fitting bitmap at full size on the leading edge", () => {
   assert.deepEqual(printSheetPlacement(1280, 960), {
-    dx: 2000 - 1280,
+    dx: 0,
     dy: 0,
     dw: 1280,
     dh: 960,
   });
   assert.deepEqual(printSheetPlacement(960, 960), {
-    dx: 2000 - 960,
+    dx: 0,
     dy: 0,
     dw: 960,
     dh: 960,
   });
   assert.deepEqual(printSheetPlacement(4000, 2000), {
-    dx: 80,
+    dx: 0,
     dy: 0,
     dw: 1920,
     dh: 960,
