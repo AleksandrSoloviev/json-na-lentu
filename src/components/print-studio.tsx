@@ -53,7 +53,7 @@ import { SAMPLE_JSON } from "@/lib/sample-json";
 import { SAMPLE_TEXT } from "@/lib/sample-text";
 import { cn } from "cn";
 
-const PROBE_WIDTHS = [480, 640, 800, 960, 1280, 1600, 2000];
+const PROBE_WIDTHS = [960, 1280, 1600, 2000];
 
 const MIN_FONT = 44;
 const MAX_FONT = 76;
@@ -186,8 +186,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   const [fontSize, setFontSize] = useState(DEFAULT_FONT);
   const [shape, setShape] = useState<FrameShape>("frame");
   const [textTurn, setTextTurn] = useState<Exclude<TextTurn, 0>>(90);
-  const [sheetWidth, setSheetWidth] = useState(COLUMN_MAX_WIDTH);
-  const [sheetLive, setSheetLive] = useState(COLUMN_MAX_WIDTH);
+  const [sheetWidth, setSheetWidth] = useState(MIN_SHEET_WIDTH);
+  const [sheetLive, setSheetLive] = useState(MIN_SHEET_WIDTH);
   const [sheetDraft, setSheetDraft] = useState<string | null>(null);
   const [photoStart, setPhotoStart] = useState(0);
   const [charWidth, setCharWidth] = useState<number | null>(null);
@@ -780,7 +780,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
           ) : null}
 
           <div className="space-y-2">
-            <Label htmlFor={sheetId}>Проба ширины: {sheetLive}</Label>
+            <Label htmlFor={sheetId}>Ширина листа: {sheetLive}</Label>
             <div className="flex items-center gap-3">
               <input
                 id={sheetId}
@@ -831,7 +831,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                 className="w-24 rounded-md border border-border bg-white px-3 py-2 font-mono text-sm"
               />
             </div>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Готовые ширины пробы">
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Готовые ширины листа">
               {PROBE_WIDTHS.map((width) => (
                 <Button
                   key={width}
@@ -850,8 +850,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
               ))}
             </div>
             <p className="text-sm text-muted-foreground">
-              Файл будет {sheetWidth}×{FRAME_WIDTH}. Уже 2000 лента короче. Уменьшай,
-              пока камера ещё прожигает буквы: так найдётся минимальный размер.
+              Файл будет {sheetWidth}×{FRAME_WIDTH}. Камера прожигает от 960, уже этого
+              лента выходит пустой. Шире 960 на одном куске помещается больше строк.
             </p>
           </div>
 
@@ -933,8 +933,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             ) : null}
             {previewFrames[0] ? (
               <p role="status" className="text-sm text-muted-foreground">
-                Каждый файл — {previewFrames[0].width}×{previewFrames[0].height}. Уже
-                2000 лента короче. Буквы того же размера, повёрнуты как в свитке.
+                Каждый файл — {previewFrames[0].width}×{previewFrames[0].height}. Камера
+                прожигает от 960. Буквы того же размера, повёрнуты как в свитке.
               </p>
             ) : null}
             {mode !== "image" && shape === "strip" && pages.length > 1 ? (

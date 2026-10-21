@@ -146,8 +146,8 @@ test("planColumn keeps each scroll file within 2000×960", () => {
   );
 });
 
-test("planColumn uses a narrower probe sheet", () => {
-  const text = Array.from({ length: 10 }, (_, index) => `строка ${index + 1}`).join("\n");
+test("planColumn raises a sheet below the printable minimum to 960", () => {
+  const text = Array.from({ length: 24 }, (_, index) => `строка ${index + 1}`).join("\n");
   const plan = planColumn(text, {
     fontSize: 56,
     lineHeight: 1.35,
@@ -157,21 +157,21 @@ test("planColumn uses a narrower probe sheet", () => {
     sheetWidth: 400,
   });
   const linePx = Math.ceil(56 * 1.35);
-  const maxLines = Math.floor((400 - 112) / linePx);
-  assert.equal(maxLines, 3);
-  assert.equal(plan.pages.length, 4);
+  const maxLines = Math.floor((960 - 112) / linePx);
+  assert.equal(maxLines, 11);
+  assert.equal(plan.pages.length, 3);
   for (const page of plan.pages) {
-    assert.equal(page.width, 400);
+    assert.equal(page.width, 960);
     assert.equal(page.height, 960);
-    assert.ok(page.lines.length <= 3);
+    assert.ok(page.lines.length <= maxLines);
   }
   assert.equal(
     plan.pages.reduce((sum, page) => sum + page.lines.length, 0),
-    10,
+    24,
   );
 });
 
-test("planPages keeps frame lines inside a narrow probe sheet", () => {
+test("planPages keeps frame lines inside the 960 minimum sheet", () => {
   const text = Array.from({ length: 20 }, (_, index) => `строка ${index + 1}`).join("\n");
   const plan = planPages(text, {
     width: 960,
@@ -183,16 +183,17 @@ test("planPages keeps frame lines inside a narrow probe sheet", () => {
     maxPages: 6,
     sheetWidth: 400,
   });
-  assert.ok(plan.pages.length > 1);
+  assert.equal(plan.pages.length, 2);
   for (const page of plan.pages) {
-    assert.ok(page.lines.length <= 3);
+    assert.ok(page.lines.length <= 11);
   }
 });
 
-test("clampSheetWidth stays between the probe limits", () => {
+test("clampSheetWidth stays between 960 and 2000", () => {
   assert.equal(clampSheetWidth(2000), 2000);
-  assert.equal(clampSheetWidth(640.4), 640);
-  assert.equal(clampSheetWidth(10), 240);
+  assert.equal(clampSheetWidth(1280.2), 1280);
+  assert.equal(clampSheetWidth(640.4), 960);
+  assert.equal(clampSheetWidth(10), 960);
   assert.equal(clampSheetWidth(9000), 2000);
 });
 
@@ -217,9 +218,9 @@ test("printSheetPlacement keeps a fitting bitmap at full size on the right", () 
   });
   assert.deepEqual(printSheetPlacement(1280, 960, 640), {
     dx: 0,
-    dy: 240,
-    dw: 640,
-    dh: 480,
+    dy: 120,
+    dw: 960,
+    dh: 720,
   });
 });
 
