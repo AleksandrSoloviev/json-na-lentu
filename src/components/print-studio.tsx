@@ -60,17 +60,17 @@ const SHAPES: { id: FrameShape; label: string; hint: string }[] = [
   {
     id: "frame",
     label: "Кадр 3:4",
-    hint: "Обычное фото на листе 2000×960. Другой размер камера печатает белым.",
+    hint: "Короткий блок на листе 2000×960. Буквы полного размера и повёрнуты так же, как в свитке.",
   },
   {
     id: "square",
     label: "Квадрат",
-    hint: "Квадратный блок на том же листе 2000×960, который камера печатает.",
+    hint: "Квадратный блок теми же штрихами: полный размер, без уменьшения в угол.",
   },
   {
     id: "strip",
     label: "Свиток",
-    hint: "Колонка вдоль ленты. Буквы на фото повёрнуты на 90°: камера сама поворачивает снимок, и обычный текст у неё выходит строкой.",
+    hint: "Колонка вдоль ленты. Буквы на фото повёрнуты на 90°: камера сама поворачивает снимок, и без этого поворота текст выходит строкой.",
   },
 ];
 
@@ -78,22 +78,22 @@ const IMAGE_FITS: { id: ImageFit; label: string; hint: string }[] = [
   {
     id: "native",
     label: "Как есть",
-    hint: "Пропорции снимка сохраняются. Широкий экран Mac остаётся широким.",
+    hint: "Пропорции сохраняются. Снимок кладётся на лист тем же поворотом, что и свиток.",
   },
   {
     id: "frame",
     label: "Кадр 3:4",
-    hint: "Весь снимок вписан в вертикальное фото.",
+    hint: "Весь снимок вписан в кадр и положен на лист поворотом свитка.",
   },
   {
     id: "square",
     label: "Квадрат",
-    hint: "Весь снимок вписан в квадрат.",
+    hint: "Весь снимок вписан в квадрат и положен на лист поворотом свитка.",
   },
   {
     id: "strip",
     label: "Лента",
-    hint: "Длинный снимок режется сверху вниз на несколько кадров.",
+    hint: "Длинный снимок режется на части, каждая кладётся на лист поворотом свитка.",
   },
 ];
 
@@ -267,7 +267,10 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
         kind: "image" as const,
         width: COLUMN_MAX_WIDTH,
         height: FRAME_WIDTH,
+        sourceWidth: page.width,
+        sourceHeight: page.height,
         data: page.data,
+        turn: textTurn,
       }));
     }
     return pages.map((page) => ({
@@ -275,7 +278,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
       width: alongTape ? page.width : COLUMN_MAX_WIDTH,
       height: alongTape ? page.height : FRAME_WIDTH,
       page,
-      turn: alongTape ? textTurn : 0,
+      turn: textTurn,
       column: alongTape,
     }));
   }, [alongTape, mode, pages, preparedImages, textTurn]);
@@ -765,10 +768,9 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
           </div>
           ) : null}
 
-          {mode !== "image" && shape === "strip" ? (
           <div className="space-y-2">
             <p className="text-sm font-medium" id="along-label">
-              Как положить текст на фото
+              Как положить на фото
             </p>
             <div role="group" aria-labelledby="along-label" className="flex flex-wrap gap-2">
               <Button
@@ -789,11 +791,11 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
               </Button>
             </div>
             <p className="text-sm text-muted-foreground">
-              На ленте получится колонка: строка идёт от длинного края бумаги к
-              длинному. Если колонка вверх ногами, выбери другое направление.
+              Кадр, квадрат и картинка кладутся тем же поворотом, что и свиток.
+              Строка идёт от длинного края бумаги к длинному. Если отпечаток вверх
+              ногами, выбери другое направление.
             </p>
           </div>
-          ) : null}
 
           <input
             ref={fileRef}
@@ -842,10 +844,10 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                   : `На снимок попали первые ${MAX_PAGES} кадров. Уменьши шрифт или разрежь ${mode === "json" ? "JSON" : "текст"}.`}
               </p>
             ) : null}
-            {mode !== "image" && shape === "strip" && previewFrames[0] ? (
+            {previewFrames[0] ? (
               <p role="status" className="text-sm text-muted-foreground">
-                Каждый свиток — {COLUMN_MAX_WIDTH}×{previewFrames[0].height}. Камера
-                печатает только такой широкий кадр.
+                Каждый файл — {previewFrames[0].width}×{previewFrames[0].height}. Буквы
+                и штрихи полного размера, повёрнуты как в свитке, который печатается.
               </p>
             ) : null}
             {mode !== "image" && shape === "strip" && pages.length > 1 ? (

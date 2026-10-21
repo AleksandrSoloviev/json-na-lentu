@@ -7,6 +7,8 @@ import {
 
 export type TextTurn = 0 | 90 | -90;
 
+export type SheetTurn = 90 | -90;
+
 export type PreviewFrame =
   | {
       kind: "text";
@@ -16,30 +18,19 @@ export type PreviewFrame =
       turn: TextTurn;
       column?: boolean;
     }
-  | { kind: "image"; width: number; height: number; data: Uint8ClampedArray };
+  | {
+      kind: "image";
+      width: number;
+      height: number;
+      sourceWidth: number;
+      sourceHeight: number;
+      data: Uint8ClampedArray;
+      turn: SheetTurn;
+    };
 
 const INK_CUTOFF = 188;
 
-const mountOnPrintSheet = (
-  context: CanvasRenderingContext2D,
-  canvas: HTMLCanvasElement,
-): void => {
-  if (canvas.width === COLUMN_MAX_WIDTH && canvas.height === FRAME_WIDTH) return;
-  const snapshot = document.createElement("canvas");
-  snapshot.width = canvas.width;
-  snapshot.height = canvas.height;
-  const snap = snapshot.getContext("2d");
-  if (!snap) return;
-  snap.drawImage(canvas, 0, 0);
-  const place = printSheetPlacement(snapshot.width, snapshot.height);
-  canvas.width = COLUMN_MAX_WIDTH;
-  canvas.height = FRAME_WIDTH;
-  context.imageSmoothingEnabled = false;
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, COLUMN_MAX_WIDTH, FRAME_WIDTH);
-  context.drawImage(snapshot, place.dx, place.dy, place.dw, place.dh);
-  flattenInk(context, COLUMN_MAX_WIDTH, FRAME_WIDTH);
-};
+const sheetTurn = (turn: TextTurn): SheetTurn => (turn === -90 ? -90 : 90);
 
 const flattenInk = (
   context: CanvasRenderingContext2D,
@@ -62,54 +53,17 @@ const flattenInk = (
   context.putImageData(image, 0, 0);
 };
 
-export const drawPage = (
+const paintRotatedText = (
   canvas: HTMLCanvasElement,
   page: PagePlan,
   fontFamily: string,
-  turn: TextTurn = 0,
+  turn: SheetTurn,
+  outputWidth: number,
+  outputHeight: number,
 ): void => {
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) return;
 
-  const outputWidth = turn === 0 ? page.width : page.height;
-  const outputHeight = turn === 0 ? page.height : page.width;
-  canvas.width = outputWidth;
-  canvas.height = outputHeight;
-  context.imageSmoothingEnabled = false;
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, outputWidth, outputHeight);
-  context.save();
-  if (turn === 90) {
-    context.translate(outputWidth, 0);
-    context.rotate(Math.PI / 2);
-  } else if (turn === -90) {
-    context.translate(0, outputHeight);
-    context.rotate(-Math.PI / 2);
-  }
-  context.fillStyle = "#000000";
-  context.font = `700 ${page.fontSize}px ${fontFamily}`;
-  context.textBaseline = "top";
-  context.textAlign = "left";
-
-  page.lines.forEach((line, index) => {
-    context.fillText(line, page.padding, page.padding + index * page.linePx);
-  });
-  context.restore();
-  flattenInk(context, outputWidth, outputHeight);
-  mountOnPrintSheet(context, canvas);
-};
-
-export const drawColumn = (
-  canvas: HTMLCanvasElement,
-  page: PagePlan,
-  fontFamily: string,
-  turn: 90 | -90,
-): void => {
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) return;
-
-  const outputWidth = page.width;
-  const outputHeight = page.height;
   canvas.width = outputWidth;
   canvas.height = outputHeight;
   context.imageSmoothingEnabled = false;
@@ -134,17 +88,96 @@ export const drawColumn = (
   flattenInk(context, outputWidth, outputHeight);
 };
 
+export const drawPage = (
+  canvas: HTMLCanvasElement,
+  page: PagePlan,
+  fontFamily: string,
+  turn: TextTurn = 90,
+): void => {
+  paintRotatedText(
+    canvas,
+    page,
+    fontFamily,
+    sheetTurn(turn),
+    COLUMN_MAX_WIDTH,
+    FRAME_WIDTH,
+  );
+};
+
+export const drawColumn = (
+  canvas: HTMLCanvasElement,
+  page: PagePlan,
+  fontFamily: string,
+  turn: SheetTurn,
+): void => {
+  paintRotatedText(canvas, page, fontFamily, turn, page.width, page.height);
+};
+
+const turnOntoSheet = (
+  source: CanvasImageSource,
+  sourceWidth: number,
+  sourceHeight: number,
+  turn: SheetTurn,
+): HTMLCanvasElement => {
+  const turnedWidth = sourceHeight;
+  const turnedHeight = sourceWidth;
+  const turned = document.createElement("canvas");
+  turned.width = turnedWidth;
+  turned.height = turnedHeight;
+  const turnedContext = turned.getContext("2d");
+  if (!turnedContext) return turned;
+  turnedContext.imageSmoothingEnabled = false;
+  turnedContext.fillStyle = "#ffffff";
+  turnedContext.fillRect(0, 0, turnedWidth, turnedHeight);
+  turnedContext.save();
+  if (turn === 90) {
+    turnedContext.translate(turnedWidth, 0);
+    turnedContext.rotate(Math.PI / 2);
+  } else {
+    turnedContext.translate(0, turnedHeight);
+    turnedContext.rotate(-Math.PI / 2);
+  }
+  turnedContext.drawImage(source, 0, 0, sourceWidth, sourceHeight);
+  turnedContext.restore();
+  return turned;
+};
+
 export const paintImage = (
   canvas: HTMLCanvasElement,
-  page: { width: number; height: number; data: Uint8ClampedArray },
+  page: {
+    sourceWidth: number;
+    sourceHeight: number;
+    data: Uint8ClampedArray;
+    turn?: TextTurn;
+  },
 ): void => {
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) return;
-  canvas.width = page.width;
-  canvas.height = page.height;
+  const source = document.createElement("canvas");
+  source.width = page.sourceWidth;
+  source.height = page.sourceHeight;
+  const sourceContext = source.getContext("2d");
+  if (!sourceContext) return;
   const copy = new Uint8ClampedArray(page.data);
-  context.putImageData(new ImageData(copy, page.width, page.height), 0, 0);
-  mountOnPrintSheet(context, canvas);
+  sourceContext.putImageData(
+    new ImageData(copy, page.sourceWidth, page.sourceHeight),
+    0,
+    0,
+  );
+  const turned = turnOntoSheet(
+    source,
+    page.sourceWidth,
+    page.sourceHeight,
+    sheetTurn(page.turn ?? 90),
+  );
+  const place = printSheetPlacement(turned.width, turned.height);
+  canvas.width = COLUMN_MAX_WIDTH;
+  canvas.height = FRAME_WIDTH;
+  context.imageSmoothingEnabled = false;
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, COLUMN_MAX_WIDTH, FRAME_WIDTH);
+  context.drawImage(turned, place.dx, place.dy, place.dw, place.dh);
+  flattenInk(context, COLUMN_MAX_WIDTH, FRAME_WIDTH);
 };
 
 export const canvasToJpeg = (canvas: HTMLCanvasElement): Promise<Blob> =>
