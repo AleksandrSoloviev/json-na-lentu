@@ -23,49 +23,22 @@ const raster = (width: number, height: number, pixels: number[]): Raster => ({
   data: Uint8ClampedArray.from(pixels),
 });
 
-const smallPlan = {
-  pageWidth: 4,
-  frameHeight: 4,
-  squareSize: 4,
-  maxStripHeight: 4,
-  maxNativeHeight: 4,
-};
+test("every picture is letterboxed into one camera photo", () => {
+  const wide = planImageSlots(4032, 3024).slots[0];
+  assert.equal(wide?.width, 8064);
+  assert.equal(wide?.height, 6144);
+  assert.equal(wide?.dw, 8064);
+  assert.equal(wide?.dh, 6048);
+  assert.equal(wide?.dx, 0);
+  assert.equal(wide?.dy, 48);
 
-test("native fit keeps a wide screenshot in one short frame", () => {
-  const planned = planImageSlots(8, 4, "native", smallPlan);
-  assert.equal(planned.truncated, false);
-  assert.equal(planned.slots.length, 1);
-  assert.deepEqual(planned.slots[0], {
-    width: 4,
-    height: 2,
-    sx: 0,
-    sy: 0,
-    sw: 8,
-    sh: 4,
-    dx: 0,
-    dy: 0,
-    dw: 4,
-    dh: 2,
-  });
-});
-
-test("a tall image is sliced and the rest is marked when the page limit is hit", () => {
-  const planned = planImageSlots(4, 12, "strip", { ...smallPlan, maxPages: 2 });
-  assert.equal(planned.truncated, true);
-  assert.equal(planned.slots.length, 2);
-  assert.equal(planned.slots[0]?.sy, 0);
-  assert.equal(planned.slots[0]?.sh, 4);
-  assert.equal(planned.slots[1]?.sy, 4);
-  assert.equal(planned.slots[1]?.height, 4);
-});
-
-test("frame fit letterboxes a wide picture", () => {
-  const slot = planImageSlots(4, 2, "frame", smallPlan).slots[0];
-  assert.equal(slot?.width, 4);
-  assert.equal(slot?.height, 4);
-  assert.equal(slot?.dw, 4);
-  assert.equal(slot?.dh, 2);
-  assert.equal(slot?.dy, 1);
+  const tall = planImageSlots(4, 12).slots[0];
+  assert.equal(tall?.width, 8064);
+  assert.equal(tall?.height, 6144);
+  assert.equal(tall?.dw, 2048);
+  assert.equal(tall?.dh, 6144);
+  assert.equal(tall?.dx, 3008);
+  assert.equal(tall?.dy, 0);
 });
 
 test("sampling averages a black and white pair into the print pixel", () => {
@@ -87,7 +60,7 @@ test("sampling averages a black and white pair into the print pixel", () => {
 
 test("transparent pixels sit on white paper", () => {
   const source = raster(1, 1, [0, 0, 0, 0]);
-  const prepared = prepareImagePages(source, { fit: "native", ink: "screenshot" });
+  const prepared = prepareImagePages(source, { ink: "screenshot" });
   const pixel = prepared.pages[0]?.data[0];
   assert.equal(pixel, 255);
 });
@@ -95,7 +68,7 @@ test("transparent pixels sit on white paper", () => {
 test("a dark screenshot is inverted into black text on white", () => {
   const source = raster(2, 1, [20, 20, 20, 255, 230, 230, 230, 255]);
   assert.ok(meanLuminance(source) < 128);
-  const prepared = prepareImagePages(source, { fit: "frame", ink: "screenshot" });
+  const prepared = prepareImagePages(source, { ink: "screenshot" });
   assert.equal(prepared.inverted, true);
   const data = prepared.pages[0]?.data ?? new Uint8ClampedArray();
   const darkInk = data[0] === 0;

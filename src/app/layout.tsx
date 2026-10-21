@@ -7,7 +7,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "На ленту",
   description:
-    "Чёрно-белые кадры и узкий свиток из текста для детской камеры с термопечатью.",
+    "Чёрно-белый JPEG 8064×6144 для детской камеры с термопечатью: JSON, текст и картинки.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

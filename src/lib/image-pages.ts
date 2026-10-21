@@ -1,13 +1,6 @@
-import {
-  FRAME_HEIGHT,
-  FRAME_WIDTH,
-  MAX_PAGES,
-  MAX_STRIP_HEIGHT,
-  SQUARE_SIZE,
-} from "./plan-pages.ts";
+import { PHOTO_HEIGHT, PHOTO_WIDTH } from "./plan-pages.ts";
 
-export const MAX_NATIVE_HEIGHT = 1600;
-export const MAX_RASTER_PIXELS = 40_000_000;
+export const MAX_RASTER_PIXELS = 64_000_000;
 export const MAX_IMAGE_BYTES = 80 * 1024 * 1024;
 const SCREEN_CUTOFF = 168;
 const SAMPLE_SPAN = 4;
@@ -18,7 +11,6 @@ export type Raster = {
   data: Uint8ClampedArray;
 };
 
-export type ImageFit = "native" | "frame" | "square" | "strip";
 export type ImageInk = "screenshot" | "photo";
 
 export type ImageSlot = {
@@ -35,18 +27,13 @@ export type ImageSlot = {
 };
 
 export type ImagePage = {
-  width: number;
-  height: number;
+  sourceWidth: number;
+  sourceHeight: number;
   data: Uint8ClampedArray;
-};
-
-export type ImagePlanOptions = {
-  maxPages?: number;
-  pageWidth?: number;
-  frameHeight?: number;
-  squareSize?: number;
-  maxStripHeight?: number;
-  maxNativeHeight?: number;
+  dx: number;
+  dy: number;
+  dw: number;
+  dh: number;
 };
 
 const clamp = (value: number, min: number, max: number): number =>
@@ -68,40 +55,6 @@ const composite = (
 
 const luminance = (red: number, green: number, blue: number): number =>
   red * 0.299 + green * 0.587 + blue * 0.114;
-
-const sliceVertically = (
-  srcWidth: number,
-  srcHeight: number,
-  pageWidth: number,
-  maxPageHeight: number,
-  maxPages: number,
-): { slots: ImageSlot[]; truncated: boolean } => {
-  const scale = pageWidth / srcWidth;
-  const maxSrcSlice = Math.max(1, Math.floor(maxPageHeight / scale));
-  const sliceCount = Math.ceil(srcHeight / maxSrcSlice);
-  const kept = Math.min(sliceCount, maxPages);
-  const slots: ImageSlot[] = [];
-
-  for (let index = 0; index < kept; index += 1) {
-    const sy = index * maxSrcSlice;
-    const sh = Math.min(maxSrcSlice, srcHeight - sy);
-    const height = Math.max(1, Math.round(sh * scale));
-    slots.push({
-      width: pageWidth,
-      height,
-      sx: 0,
-      sy,
-      sw: srcWidth,
-      sh,
-      dx: 0,
-      dy: 0,
-      dw: pageWidth,
-      dh: height,
-    });
-  }
-
-  return { slots, truncated: sliceCount > kept };
-};
 
 const containSlot = (
   srcWidth: number,
@@ -129,56 +82,12 @@ const containSlot = (
 export const planImageSlots = (
   srcWidth: number,
   srcHeight: number,
-  fit: ImageFit,
-  options: ImagePlanOptions = {},
 ): { slots: ImageSlot[]; truncated: boolean } => {
   if (srcWidth < 1 || srcHeight < 1) return { slots: [], truncated: false };
-
-  const maxPages = options.maxPages ?? MAX_PAGES;
-  const pageWidth = options.pageWidth ?? FRAME_WIDTH;
-  const frameHeight = options.frameHeight ?? FRAME_HEIGHT;
-  const squareSize = options.squareSize ?? SQUARE_SIZE;
-  const maxStripHeight = options.maxStripHeight ?? MAX_STRIP_HEIGHT;
-  const maxNativeHeight = options.maxNativeHeight ?? MAX_NATIVE_HEIGHT;
-
-  if (fit === "frame") {
-    return {
-      slots: [containSlot(srcWidth, srcHeight, pageWidth, frameHeight)],
-      truncated: false,
-    };
-  }
-  if (fit === "square") {
-    return {
-      slots: [containSlot(srcWidth, srcHeight, squareSize, squareSize)],
-      truncated: false,
-    };
-  }
-  if (fit === "strip") {
-    return sliceVertically(srcWidth, srcHeight, pageWidth, maxStripHeight, maxPages);
-  }
-
-  const fullHeight = Math.max(1, Math.round((srcHeight * pageWidth) / srcWidth));
-  if (fullHeight <= maxNativeHeight) {
-    return {
-      slots: [
-        {
-          width: pageWidth,
-          height: fullHeight,
-          sx: 0,
-          sy: 0,
-          sw: srcWidth,
-          sh: srcHeight,
-          dx: 0,
-          dy: 0,
-          dw: pageWidth,
-          dh: fullHeight,
-        },
-      ],
-      truncated: false,
-    };
-  }
-
-  return sliceVertically(srcWidth, srcHeight, pageWidth, maxNativeHeight, maxPages);
+  return {
+    slots: [containSlot(srcWidth, srcHeight, PHOTO_WIDTH, PHOTO_HEIGHT)],
+    truncated: false,
+  };
 };
 
 export const sampleSlot = (
@@ -316,22 +225,59 @@ export const inkPhoto = (data: Uint8ClampedArray, width: number, height: number)
   }
 };
 
+const compositeOnPaper = (raster: Raster): Uint8ClampedArray => {
+  const data = new Uint8ClampedArray(raster.data);
+  for (let index = 0; index < data.length; index += 4) {
+    const [red, green, blue] = composite(
+      data[index] ?? 255,
+      data[index + 1] ?? 255,
+      data[index + 2] ?? 255,
+      data[index + 3] ?? 255,
+    );
+    data[index] = red;
+    data[index + 1] = green;
+    data[index + 2] = blue;
+    data[index + 3] = 255;
+  }
+  return data;
+};
+
 export const prepareImagePages = (
   raster: Raster,
-  options: { fit: ImageFit; ink: ImageInk; maxPages?: number },
+  options: { ink: ImageInk },
 ): { pages: ImagePage[]; truncated: boolean; inverted: boolean } => {
-  const planned = planImageSlots(raster.width, raster.height, options.fit, {
-    maxPages: options.maxPages,
-  });
-  const inverted = options.ink === "screenshot" && meanLuminance(raster) < 128;
-  const pages = planned.slots.map((slot) => {
-    const data = sampleSlot(raster, slot, inverted);
-    if (options.ink === "photo") inkPhoto(data, slot.width, slot.height);
-    else inkScreenshot(data);
-    return { width: slot.width, height: slot.height, data };
-  });
+  const planned = planImageSlots(raster.width, raster.height);
+  const slot = planned.slots[0];
+  if (!slot) return { pages: [], truncated: false, inverted: false };
 
-  return { pages, truncated: planned.truncated, inverted };
+  const data = compositeOnPaper(raster);
+  const inverted =
+    options.ink === "screenshot" && meanLuminance({ ...raster, data }) < 128;
+  if (inverted) {
+    for (let index = 0; index < data.length; index += 4) {
+      data[index] = 255 - (data[index] ?? 0);
+      data[index + 1] = 255 - (data[index + 1] ?? 0);
+      data[index + 2] = 255 - (data[index + 2] ?? 0);
+    }
+  }
+  if (options.ink === "photo") inkPhoto(data, raster.width, raster.height);
+  else inkScreenshot(data);
+
+  return {
+    pages: [
+      {
+        sourceWidth: raster.width,
+        sourceHeight: raster.height,
+        data,
+        dx: slot.dx,
+        dy: slot.dy,
+        dw: slot.dw,
+        dh: slot.dh,
+      },
+    ],
+    truncated: false,
+    inverted,
+  };
 };
 
 export const isImageFile = (file: File): boolean => {
