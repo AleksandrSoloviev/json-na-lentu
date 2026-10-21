@@ -7,7 +7,7 @@ export const MAX_PAGES = 6;
 export const MAX_STRIP_HEIGHT = 2400;
 export const MAX_SCROLL_PAGES = 12;
 export const COLUMN_MAX_WIDTH = 2000;
-export const MIN_SHEET_WIDTH = 960;
+export const MIN_SHEET_WIDTH = 980;
 export const WIDTH_FUDGE = 4;
 
 export const clampSheetWidth = (value: number): number => {

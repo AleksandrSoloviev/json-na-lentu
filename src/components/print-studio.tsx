@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { zipSync } from "fflate";
@@ -53,7 +54,48 @@ import { SAMPLE_JSON } from "@/lib/sample-json";
 import { SAMPLE_TEXT } from "@/lib/sample-text";
 import { cn } from "cn";
 
-const PROBE_WIDTHS = [960, 1280, 1600, 2000];
+const PROBE_WIDTHS = [980, 1280, 1600, 2000];
+const PHOTO_START_KEY = "lenta-photo-start";
+
+const readPhotoStart = (): number => {
+  try {
+    const value = Number(window.localStorage.getItem(PHOTO_START_KEY));
+    if (!Number.isInteger(value) || value < 0 || value > 99999) return 0;
+    return value;
+  } catch {
+    return 0;
+  }
+};
+
+const writePhotoStart = (value: number): void => {
+  try {
+    window.localStorage.setItem(PHOTO_START_KEY, String(value));
+  } catch {
+    // A private window can refuse storage. The number still works for this visit.
+  }
+};
+
+let photoStartValue = 0;
+let photoStartLoaded = false;
+const photoStartListeners = new Set<() => void>();
+
+const subscribePhotoStart = (listener: () => void): (() => void) => {
+  if (!photoStartLoaded && typeof window !== "undefined") {
+    photoStartValue = readPhotoStart();
+    photoStartLoaded = true;
+  }
+  photoStartListeners.add(listener);
+  return () => photoStartListeners.delete(listener);
+};
+
+const getPhotoStart = (): number => photoStartValue;
+
+const setStoredPhotoStart = (value: number): void => {
+  photoStartValue = value;
+  photoStartLoaded = true;
+  writePhotoStart(value);
+  photoStartListeners.forEach((listener) => listener());
+};
 
 const MIN_FONT = 44;
 const MAX_FONT = 76;
@@ -241,7 +283,11 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   const [sheetWidth, setSheetWidth] = useState(MIN_SHEET_WIDTH);
   const [sheetLive, setSheetLive] = useState(MIN_SHEET_WIDTH);
   const [sheetDraft, setSheetDraft] = useState<string | null>(null);
-  const [photoStart, setPhotoStart] = useState(0);
+  const photoStart = useSyncExternalStore(subscribePhotoStart, getPhotoStart, () => 0);
+  const setPhotoStart = (value: number | ((current: number) => number)): void => {
+    const next = typeof value === "function" ? value(getPhotoStart()) : value;
+    setStoredPhotoStart(next);
+  };
   const [charWidth, setCharWidth] = useState<number | null>(null);
   const [fontState, setFontState] = useState<FontState>("loading");
   const [fileError, setFileError] = useState<string | null>(null);
@@ -935,8 +981,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
               ))}
             </div>
             <p className="text-sm text-muted-foreground">
-              Файл будет {sheetWidth}×{FRAME_WIDTH}. Камера прожигает от 960, уже этого
-              лента выходит пустой. Шире 960 на одном куске помещается больше строк.
+              Файл будет {sheetWidth}×{FRAME_WIDTH}. Камера прожигает от 980, уже этого
+              лента выходит пустой. Шире 980 на одном куске помещается больше строк.
             </p>
           </div>
 
@@ -1019,7 +1065,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             {previewFrames[0] ? (
               <p role="status" className="text-sm text-muted-foreground">
                 Каждый файл — {previewFrames[0].width}×{previewFrames[0].height}. Камера
-                прожигает от 960. Буквы того же размера, повёрнуты как в свитке.
+                прожигает от 980. Буквы того же размера, повёрнуты как в свитке.
               </p>
             ) : null}
             {mode !== "image" && shape === "strip" && pages.length > 1 ? (
@@ -1053,8 +1099,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
               className="w-full rounded-md border border-border bg-white px-3 py-2 font-mono text-sm"
             />
             <p className="text-sm text-muted-foreground">
-              Камера берёт только имена вида PHO00000.JPG. Следующий файл —{" "}
-              {photoFileName(photoStart)}.
+              Камера берёт только имена вида PHO00000.JPG. Номер запоминается в этом
+              браузере. Следующий файл — {photoFileName(photoStart)}.
             </p>
           </div>
 

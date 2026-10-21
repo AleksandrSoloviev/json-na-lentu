@@ -146,7 +146,7 @@ test("planColumn keeps each scroll file within 2000×960", () => {
   );
 });
 
-test("planColumn raises a sheet below the printable minimum to 960", () => {
+test("planColumn raises a sheet below the printable minimum to 980", () => {
   const text = Array.from({ length: 24 }, (_, index) => `строка ${index + 1}`).join("\n");
   const plan = planColumn(text, {
     fontSize: 56,
@@ -157,11 +157,11 @@ test("planColumn raises a sheet below the printable minimum to 960", () => {
     sheetWidth: 400,
   });
   const linePx = Math.ceil(56 * 1.35);
-  const maxLines = Math.floor((960 - 112) / linePx);
+  const maxLines = Math.floor((980 - 112) / linePx);
   assert.equal(maxLines, 11);
   assert.equal(plan.pages.length, 3);
   for (const page of plan.pages) {
-    assert.equal(page.width, 960);
+    assert.equal(page.width, 980);
     assert.equal(page.height, 960);
     assert.ok(page.lines.length <= maxLines);
   }
@@ -171,7 +171,7 @@ test("planColumn raises a sheet below the printable minimum to 960", () => {
   );
 });
 
-test("planPages keeps frame lines inside the 960 minimum sheet", () => {
+test("planPages keeps frame lines inside the 980 minimum sheet", () => {
   const text = Array.from({ length: 20 }, (_, index) => `строка ${index + 1}`).join("\n");
   const plan = planPages(text, {
     width: 960,
@@ -189,11 +189,12 @@ test("planPages keeps frame lines inside the 960 minimum sheet", () => {
   }
 });
 
-test("clampSheetWidth stays between 960 and 2000", () => {
+test("clampSheetWidth stays between 980 and 2000", () => {
   assert.equal(clampSheetWidth(2000), 2000);
   assert.equal(clampSheetWidth(1280.2), 1280);
-  assert.equal(clampSheetWidth(640.4), 960);
-  assert.equal(clampSheetWidth(10), 960);
+  assert.equal(clampSheetWidth(980), 980);
+  assert.equal(clampSheetWidth(640.4), 980);
+  assert.equal(clampSheetWidth(10), 980);
   assert.equal(clampSheetWidth(9000), 2000);
 });
 
@@ -218,9 +219,9 @@ test("printSheetPlacement keeps a fitting bitmap at full size on the right", () 
   });
   assert.deepEqual(printSheetPlacement(1280, 960, 640), {
     dx: 0,
-    dy: 120,
-    dw: 960,
-    dh: 720,
+    dy: 113,
+    dw: 980,
+    dh: 735,
   });
 });
 
