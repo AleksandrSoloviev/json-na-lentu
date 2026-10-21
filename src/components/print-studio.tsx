@@ -187,6 +187,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   const [shape, setShape] = useState<FrameShape>("frame");
   const [textTurn, setTextTurn] = useState<Exclude<TextTurn, 0>>(90);
   const [sheetWidth, setSheetWidth] = useState(COLUMN_MAX_WIDTH);
+  const [sheetLive, setSheetLive] = useState(COLUMN_MAX_WIDTH);
   const [sheetDraft, setSheetDraft] = useState<string | null>(null);
   const [photoStart, setPhotoStart] = useState(0);
   const [charWidth, setCharWidth] = useState<number | null>(null);
@@ -779,7 +780,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
           ) : null}
 
           <div className="space-y-2">
-            <Label htmlFor={sheetId}>Проба ширины: {sheetWidth}</Label>
+            <Label htmlFor={sheetId}>Проба ширины: {sheetLive}</Label>
             <div className="flex items-center gap-3">
               <input
                 id={sheetId}
@@ -787,16 +788,26 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                 min={MIN_SHEET_WIDTH}
                 max={COLUMN_MAX_WIDTH}
                 step={10}
-                value={sheetWidth}
+                value={sheetLive}
                 onChange={(event) => {
                   setSheetDraft(null);
-                  setSheetWidth(clampSheetWidth(Number(event.target.value)));
+                  setSheetLive(clampSheetWidth(Number(event.target.value)));
+                }}
+                onPointerUp={(event) => {
+                  const next = clampSheetWidth(Number(event.currentTarget.value));
+                  setSheetLive(next);
+                  setSheetWidth(next);
+                }}
+                onKeyUp={(event) => {
+                  const next = clampSheetWidth(Number(event.currentTarget.value));
+                  setSheetLive(next);
+                  setSheetWidth(next);
                 }}
                 className="min-w-0 flex-1 accent-black"
                 aria-valuemin={MIN_SHEET_WIDTH}
                 aria-valuemax={COLUMN_MAX_WIDTH}
-                aria-valuenow={sheetWidth}
-                aria-valuetext={`${sheetWidth} пикселей`}
+                aria-valuenow={sheetLive}
+                aria-valuetext={`${sheetLive} пикселей`}
               />
               <input
                 type="number"
@@ -805,11 +816,13 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                 step={10}
                 inputMode="numeric"
                 aria-label="Ширина файла в пикселях"
-                value={sheetDraft ?? sheetWidth}
-                onFocus={() => setSheetDraft(String(sheetWidth))}
+                value={sheetDraft ?? sheetLive}
+                onFocus={() => setSheetDraft(String(sheetLive))}
                 onChange={(event) => setSheetDraft(event.target.value)}
                 onBlur={(event) => {
-                  setSheetWidth(clampSheetWidth(Number(event.currentTarget.value)));
+                  const next = clampSheetWidth(Number(event.currentTarget.value));
+                  setSheetLive(next);
+                  setSheetWidth(next);
                   setSheetDraft(null);
                 }}
                 onKeyDown={(event) => {
@@ -828,6 +841,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
                   aria-pressed={sheetWidth === width}
                   onClick={() => {
                     setSheetDraft(null);
+                    setSheetLive(width);
                     setSheetWidth(width);
                   }}
                 >
@@ -895,7 +909,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
 
         <aside
           aria-label="Кадры для печати"
-          className="space-y-4 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1"
+          className="min-w-0 space-y-4 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1"
         >
           <div className="space-y-1">
             <h2 className="text-sm font-medium">Кадры</h2>
@@ -1004,24 +1018,14 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             <div className="space-y-6">
               {previewFrames.map((frame, index) => (
                 <figure key={`${frame.kind}-${index}`} className="space-y-2">
-                  <div
-                    className={
-                      frame.width > frame.height
-                        ? "w-full overflow-x-auto border border-black bg-white shadow-[6px_6px_0_0_#1c1915]"
-                        : "border border-black bg-white shadow-[6px_6px_0_0_#1c1915]"
-                    }
-                  >
+                  <div className="w-full overflow-hidden border border-black bg-white shadow-[6px_6px_0_0_#1c1915]">
                     <canvas
                       ref={(node) => {
                         canvasRefs.current[index] = node;
                       }}
                       role="img"
                       aria-label={`Кадр ${index + 1} из ${previewFrames.length}`}
-                      className={
-                        frame.width > frame.height
-                          ? "block h-48 w-auto max-w-none"
-                          : "block h-auto w-full"
-                      }
+                      className="block h-auto w-full"
                     />
                   </div>
                   <figcaption className="flex flex-wrap items-center justify-between gap-2">
@@ -1102,6 +1106,7 @@ const FullscreenFrame = ({
   onNext,
 }: FullscreenFrameProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -1115,6 +1120,10 @@ const FullscreenFrame = ({
     } else if (fontReady) {
       drawPage(canvas, frame.page, monoFamily, frame.turn, frame.width);
     }
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const inkOnLeft = frame.kind !== "image" && frame.turn === -90;
+    scroller.scrollLeft = inkOnLeft ? 0 : scroller.scrollWidth;
   }, [fontReady, monoFamily, frame]);
 
   useEffect(() => {
@@ -1167,9 +1176,12 @@ const FullscreenFrame = ({
       onKeyDown={handleKeyDown}
     >
       <div
+        ref={scrollerRef}
         className={
           frame.width > frame.height
-            ? "flex min-h-0 flex-1 items-start justify-start overflow-auto bg-white p-3"
+            ? `flex min-h-0 flex-1 items-start overflow-auto bg-white p-3 ${
+                frame.kind !== "image" && frame.turn === -90 ? "justify-start" : "justify-end"
+              }`
             : "flex min-h-0 flex-1 items-center justify-center bg-white p-3"
         }
       >
