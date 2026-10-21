@@ -830,7 +830,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             ) : null}
             {previewFrames[0] ? (
               <p role="status" className="text-sm text-muted-foreground">
-                Каждый файл — {PHOTO_WIDTH}×{PHOTO_HEIGHT}, как фото с камеры.
+                Каждый файл — {PHOTO_WIDTH}×{PHOTO_HEIGHT}, в том же виде JPEG, в каком
+                камера пишет свои снимки.
               </p>
             ) : null}
             {mode !== "image" && pages.length > 1 ? (

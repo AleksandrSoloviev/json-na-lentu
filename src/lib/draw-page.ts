@@ -1,3 +1,4 @@
+import { encodeCameraJpeg } from "@/lib/camera-jpeg";
 import { PHOTO_HEIGHT, PHOTO_WIDTH, type PagePlan } from "@/lib/plan-pages";
 
 export type PreviewFrame =
@@ -128,17 +129,12 @@ export const renderFrame = (
   drawPage(canvas, frame.page, fontFamily, scale);
 };
 
-export const canvasToJpeg = (canvas: HTMLCanvasElement): Promise<Blob> =>
-  new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) {
-          reject(new Error("Не удалось собрать JPEG"));
-          return;
-        }
-        resolve(blob);
-      },
-      "image/jpeg",
-      0.95,
-    );
-  });
+export const canvasToJpeg = (canvas: HTMLCanvasElement): Promise<Blob> => {
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return Promise.reject(new Error("Не удалось собрать JPEG"));
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  const bytes = encodeCameraJpeg(image.data, canvas.width, canvas.height);
+  const copy = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(copy).set(bytes);
+  return Promise.resolve(new Blob([copy], { type: "image/jpeg" }));
+};
