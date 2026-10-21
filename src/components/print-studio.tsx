@@ -36,8 +36,10 @@ import { parseJsonText } from "@/lib/json-text";
 import { photoFileName } from "@/lib/photo-name";
 import { preparePlainText } from "@/lib/plain-text";
 import {
+  clampSheetWidth,
   COLUMN_MAX_WIDTH,
   FRAME_WIDTH,
+  MIN_SHEET_WIDTH,
   frameGeometry,
   MAX_PAGES,
   MAX_SCROLL_PAGES,
@@ -51,6 +53,8 @@ import { SAMPLE_JSON } from "@/lib/sample-json";
 import { SAMPLE_TEXT } from "@/lib/sample-text";
 import { cn } from "cn";
 
+const PROBE_WIDTHS = [480, 640, 800, 960, 1280, 1600, 2000];
+
 const MIN_FONT = 44;
 const MAX_FONT = 76;
 const FONT_STEP = 4;
@@ -60,7 +64,7 @@ const SHAPES: { id: FrameShape; label: string; hint: string }[] = [
   {
     id: "frame",
     label: "Кадр 3:4",
-    hint: "Короткий блок на листе 2000×960. Буквы полного размера и повёрнуты так же, как в свитке.",
+    hint: "Короткий блок. Буквы полного размера и повёрнуты так же, как в свитке.",
   },
   {
     id: "square",
@@ -171,6 +175,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   const textErrorId = useId();
   const sizeId = useId();
   const photoId = useId();
+  const sheetId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
   const canvasRefs = useRef<Array<HTMLCanvasElement | null>>([]);
   const printFont = primaryFontFamily(monoFamily);
@@ -181,6 +186,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
   const [fontSize, setFontSize] = useState(DEFAULT_FONT);
   const [shape, setShape] = useState<FrameShape>("frame");
   const [textTurn, setTextTurn] = useState<Exclude<TextTurn, 0>>(90);
+  const [sheetWidth, setSheetWidth] = useState(COLUMN_MAX_WIDTH);
+  const [sheetDraft, setSheetDraft] = useState<string | null>(null);
   const [photoStart, setPhotoStart] = useState(0);
   const [charWidth, setCharWidth] = useState<number | null>(null);
   const [fontState, setFontState] = useState<FontState>("loading");
@@ -222,6 +229,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
         charWidth,
         padding: PRINT_PADDING,
         maxPages: MAX_SCROLL_PAGES,
+        sheetWidth,
       });
     }
     return planPages(printable, {
@@ -232,8 +240,9 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
       charWidth,
       padding: PRINT_PADDING,
       maxPages: MAX_PAGES,
+      sheetWidth,
     });
-  }, [alongTape, charWidth, fontSize, geometry.height, geometry.width, printable]);
+  }, [alongTape, charWidth, fontSize, geometry.height, geometry.width, printable, sheetWidth]);
 
   const pages = useMemo(() => plan?.pages ?? [], [plan]);
   const preparedImages = useMemo(() => {
@@ -265,23 +274,24 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
     if (mode === "image") {
       return (preparedImages?.pages ?? []).map((page) => ({
         kind: "image" as const,
-        width: COLUMN_MAX_WIDTH,
+        width: sheetWidth,
         height: FRAME_WIDTH,
         sourceWidth: page.width,
         sourceHeight: page.height,
         data: page.data,
         turn: textTurn,
+        sheetWidth,
       }));
     }
     return pages.map((page) => ({
       kind: "text" as const,
-      width: alongTape ? page.width : COLUMN_MAX_WIDTH,
-      height: alongTape ? page.height : FRAME_WIDTH,
+      width: sheetWidth,
+      height: FRAME_WIDTH,
       page,
       turn: textTurn,
       column: alongTape,
     }));
-  }, [alongTape, mode, pages, preparedImages, textTurn]);
+  }, [alongTape, mode, pages, preparedImages, sheetWidth, textTurn]);
   const activeIndex =
     previewFrames.length === 0 ? 0 : Math.min(active, previewFrames.length - 1);
   const activeFrame = previewFrames[activeIndex];
@@ -329,7 +339,7 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
       } else if (fontState === "ready" && frame.column && frame.turn !== 0) {
         drawColumn(canvas, frame.page, `"${printFont}"`, frame.turn);
       } else if (fontState === "ready") {
-        drawPage(canvas, frame.page, `"${printFont}"`, frame.turn);
+        drawPage(canvas, frame.page, `"${printFont}"`, frame.turn, frame.width);
       }
     });
   }, [fontState, previewFrames, printFont]);
@@ -769,6 +779,69 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
           ) : null}
 
           <div className="space-y-2">
+            <Label htmlFor={sheetId}>Проба ширины: {sheetWidth}</Label>
+            <div className="flex items-center gap-3">
+              <input
+                id={sheetId}
+                type="range"
+                min={MIN_SHEET_WIDTH}
+                max={COLUMN_MAX_WIDTH}
+                step={10}
+                value={sheetWidth}
+                onChange={(event) => {
+                  setSheetDraft(null);
+                  setSheetWidth(clampSheetWidth(Number(event.target.value)));
+                }}
+                className="min-w-0 flex-1 accent-black"
+                aria-valuemin={MIN_SHEET_WIDTH}
+                aria-valuemax={COLUMN_MAX_WIDTH}
+                aria-valuenow={sheetWidth}
+                aria-valuetext={`${sheetWidth} пикселей`}
+              />
+              <input
+                type="number"
+                min={MIN_SHEET_WIDTH}
+                max={COLUMN_MAX_WIDTH}
+                step={10}
+                inputMode="numeric"
+                aria-label="Ширина файла в пикселях"
+                value={sheetDraft ?? sheetWidth}
+                onFocus={() => setSheetDraft(String(sheetWidth))}
+                onChange={(event) => setSheetDraft(event.target.value)}
+                onBlur={(event) => {
+                  setSheetWidth(clampSheetWidth(Number(event.currentTarget.value)));
+                  setSheetDraft(null);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
+                className="w-24 rounded-md border border-border bg-white px-3 py-2 font-mono text-sm"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Готовые ширины пробы">
+              {PROBE_WIDTHS.map((width) => (
+                <Button
+                  key={width}
+                  type="button"
+                  size="sm"
+                  variant={sheetWidth === width ? "default" : "outline"}
+                  aria-pressed={sheetWidth === width}
+                  onClick={() => {
+                    setSheetDraft(null);
+                    setSheetWidth(width);
+                  }}
+                >
+                  {width}
+                </Button>
+              ))}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Файл будет {sheetWidth}×{FRAME_WIDTH}. Уже 2000 лента короче. Уменьшай,
+              пока камера ещё прожигает буквы: так найдётся минимальный размер.
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <p className="text-sm font-medium" id="along-label">
               Как положить на фото
             </p>
@@ -846,8 +919,8 @@ export const PrintStudio = ({ monoFamily }: PrintStudioProps) => {
             ) : null}
             {previewFrames[0] ? (
               <p role="status" className="text-sm text-muted-foreground">
-                Каждый файл — {previewFrames[0].width}×{previewFrames[0].height}. Буквы
-                и штрихи полного размера, повёрнуты как в свитке, который печатается.
+                Каждый файл — {previewFrames[0].width}×{previewFrames[0].height}. Уже
+                2000 лента короче. Буквы того же размера, повёрнуты как в свитке.
               </p>
             ) : null}
             {mode !== "image" && shape === "strip" && pages.length > 1 ? (
@@ -1040,7 +1113,7 @@ const FullscreenFrame = ({
     } else if (fontReady && frame.column && frame.turn !== 0) {
       drawColumn(canvas, frame.page, monoFamily, frame.turn);
     } else if (fontReady) {
-      drawPage(canvas, frame.page, monoFamily, frame.turn);
+      drawPage(canvas, frame.page, monoFamily, frame.turn, frame.width);
     }
   }, [fontReady, monoFamily, frame]);
 

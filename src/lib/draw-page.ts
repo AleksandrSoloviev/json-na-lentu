@@ -1,4 +1,5 @@
 import {
+  clampSheetWidth,
   COLUMN_MAX_WIDTH,
   FRAME_WIDTH,
   printSheetPlacement,
@@ -26,6 +27,7 @@ export type PreviewFrame =
       sourceHeight: number;
       data: Uint8ClampedArray;
       turn: SheetTurn;
+      sheetWidth?: number;
     };
 
 const INK_CUTOFF = 188;
@@ -93,13 +95,14 @@ export const drawPage = (
   page: PagePlan,
   fontFamily: string,
   turn: TextTurn = 90,
+  sheetWidth: number = COLUMN_MAX_WIDTH,
 ): void => {
   paintRotatedText(
     canvas,
     page,
     fontFamily,
     sheetTurn(turn),
-    COLUMN_MAX_WIDTH,
+    clampSheetWidth(sheetWidth),
     FRAME_WIDTH,
   );
 };
@@ -149,6 +152,7 @@ export const paintImage = (
     sourceHeight: number;
     data: Uint8ClampedArray;
     turn?: TextTurn;
+    sheetWidth?: number;
   },
 ): void => {
   const context = canvas.getContext("2d", { willReadFrequently: true });
@@ -170,14 +174,15 @@ export const paintImage = (
     page.sourceHeight,
     sheetTurn(page.turn ?? 90),
   );
-  const place = printSheetPlacement(turned.width, turned.height);
-  canvas.width = COLUMN_MAX_WIDTH;
+  const sheetWidth = page.sheetWidth ?? COLUMN_MAX_WIDTH;
+  const place = printSheetPlacement(turned.width, turned.height, sheetWidth);
+  canvas.width = place.dx + place.dw;
   canvas.height = FRAME_WIDTH;
   context.imageSmoothingEnabled = false;
   context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, COLUMN_MAX_WIDTH, FRAME_WIDTH);
+  context.fillRect(0, 0, canvas.width, FRAME_WIDTH);
   context.drawImage(turned, place.dx, place.dy, place.dw, place.dh);
-  flattenInk(context, COLUMN_MAX_WIDTH, FRAME_WIDTH);
+  flattenInk(context, canvas.width, FRAME_WIDTH);
 };
 
 export const canvasToJpeg = (canvas: HTMLCanvasElement): Promise<Blob> =>
